@@ -52,7 +52,7 @@ LAUNCHER_CHANGELOG = """
 class FireLauncher(ctk.CTk):
     def __init__(self):
         super().__init__()
-        self.title("FireLauncher v2.0.2")
+        self.title("FireLauncher v2.0.3")
         self.geometry("1150x800")
         self.minsize(1050, 700)
         self.configure(fg_color=BG_DARK)
@@ -513,7 +513,7 @@ class FireLauncher(ctk.CTk):
 
     def _show_toast(self, text):
         self.title(f"FireLauncher - {text}")
-        self.after(3000, lambda: self.title("FireLauncher v2.0.2"))
+        self.after(3000, lambda: self.title("FireLauncher v2.0.3"))
 
     def _open_mods_dir(self):
         mods_dir = os.path.join(self.minecraft_dir, "mods")
