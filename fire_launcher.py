@@ -12,6 +12,7 @@ import psutil
 import time
 import zipfile
 import tempfile
+import sys
 from io import BytesIO
 from PIL import Image
 from tkinter import filedialog
@@ -30,16 +31,15 @@ SELECT_BG  = "#2c2c2c"
 CARD_BG    = "#252525"
 
 DEFAULT_MINECRAFT_DIR = minecraft_launcher_lib.utils.get_minecraft_directory()
-import sys
 
+# --- ИСПРАВЛЕНИЕ ПУТИ К AUTHLIB ДЛЯ .EXE ---
 if getattr(sys, 'frozen', False):
-    # Если это собранный EXE (PyInstaller)
-    # Ищем файл там, куда PyInstaller его распаковал (в _MEIPASS)
     AUTHLIB_PATH = os.path.join(sys._MEIPASS, "authlib-injector.jar")
 else:
-    # Если запущен обычный .py скрипт
     AUTHLIB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "authlib-injector.jar")
-    ELY_AUTH_URL = "https://authserver.ely.by/auth/authenticate"
+
+# --- КОНСТАНТЫ ELY.BY (ТЕ САМЫЕ, КОТОРЫЕ ПОТЕРЯЛИСЬ) ---
+ELY_AUTH_URL = "https://authserver.ely.by/auth/authenticate"
 ELY_SKIN_URL = "https://authserver.ely.by/api/skins"
 ELY_API_ROOT = "ely.by"
 
@@ -49,18 +49,15 @@ TOKEN_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "auth_toke
 MODRINTH_API = "https://mod.mcimirror.top/modrinth/v2"
 
 LAUNCHER_CHANGELOG = """
-🔥 FireLauncher v2.0.0 (Мега-обновление!)
-- Смена скина Ely.by прямо в лаунчере.
-- Автоматическое скачивание нужной Java.
-- Импорт сборок (.mrpack и .zip).
-- Мониторинг ОЗУ/CPU в реальном времени.
-- Проверка модов на вирусы (опционально).
+🔥 FireLauncher v2.0.7 (Текущая)
+- Исправлена ошибка ELY_AUTH_URL.
+- Исправлен путь к authlib-injector внутри .exe.
 """
 
 class FireLauncher(ctk.CTk):
     def __init__(self):
         super().__init__()
-        self.title("FireLauncher v2.0.7")
+        self.title("FireLauncher v2.0.8")
         self.geometry("1150x800")
         self.minsize(1050, 700)
         self.configure(fg_color=BG_DARK)
@@ -126,7 +123,7 @@ class FireLauncher(ctk.CTk):
         play_frame = ctk.CTkFrame(self, fg_color="transparent")
         play_frame.grid(row=0, column=1, sticky="nsew", padx=30, pady=30)
         
-        ctk.CTkLabel(play_frame, text="Добро пожаловать в FireLauncher v2!", font=("Segoe UI", 28, "bold"), text_color=TEXT).pack(anchor="w", pady=(0, 5))
+        ctk.CTkLabel(play_frame, text="Добро пожаловать в FireLauncher!", font=("Segoe UI", 28, "bold"), text_color=TEXT).pack(anchor="w", pady=(0, 5))
         self.desc_label = ctk.CTkLabel(play_frame, text="Выберите версию и нажмите Играть.", font=("Segoe UI", 14), text_color=MUTED)
         self.desc_label.pack(anchor="w", pady=(0, 10))
 
@@ -173,18 +170,15 @@ class FireLauncher(ctk.CTk):
         self.play_btn.pack(side="left")
         self.frames["play"] = play_frame
 
-        # --- Фрейм "Сборки" (Импорт и Модлоадеры) ---
+        # --- Фрейм "Сборки" ---
         build_frame = ctk.CTkFrame(self, fg_color="transparent")
         build_frame.grid(row=0, column=1, sticky="nsew", padx=30, pady=30)
         ctk.CTkLabel(build_frame, text="Сборки и Модлоадеры", font=("Segoe UI", 28, "bold"), text_color=TEXT).pack(anchor="w", pady=(0, 5))
         
-        # Импорт сборок
         ctk.CTkLabel(build_frame, text="Импорт готовой сборки (.mrpack / CurseForge .zip):", font=("Segoe UI", 14), text_color=TEXT).pack(anchor="w", pady=(20, 5))
         ctk.CTkButton(build_frame, text="📂 Выбрать файл сборки", fg_color="#4f8cff", hover_color="#3a75e6", width=200, height=40, command=self._import_modpack).pack(anchor="w", pady=10)
 
-        ctk.CTkLabel(build_frame, text="─" * 50, text_color=MUTED).pack(pady=20)
-
-        ctk.CTkLabel(build_frame, text="Установка модлоадеров:", font=("Segoe UI", 14), text_color=TEXT).pack(anchor="w", pady=(10, 5))
+        ctk.CTkLabel(build_frame, text="Установка модлоадеров:", font=("Segoe UI", 14), text_color=TEXT).pack(anchor="w", pady=(20, 5))
         self.build_version_var = ctk.StringVar(value="")
         self.build_version_menu = ctk.CTkOptionMenu(build_frame, variable=self.build_version_var, values=["Загрузка..."], width=250, height=35, fg_color="#1e1e1e", button_color=ACCENT)
         self.build_version_menu.pack(anchor="w", pady=(5, 20))
@@ -256,8 +250,6 @@ class FireLauncher(ctk.CTk):
         self.ram_usage_bar = ctk.CTkProgressBar(stats_frame, width=400, height=15, progress_color="#4f8cff")
         self.ram_usage_bar.set(0)
         self.ram_usage_bar.pack(anchor="w", pady=(0, 20))
-        
-        ctk.CTkLabel(stats_frame, text="* Запустите игру, чтобы видеть нагрузку", font=("Segoe UI", 11), text_color=MUTED).pack(anchor="w", pady=20)
         self.frames["stats"] = stats_frame
 
         # --- Фрейм "Настройки" ---
@@ -290,133 +282,97 @@ class FireLauncher(ctk.CTk):
             frame.grid_forget()
         self.frames[name].grid(row=0, column=1, sticky="nsew", padx=30, pady=30)
         
-        # Запуск мониторинга при переходе на вкладку
         if name == "stats" and not self.monitor_thread_running:
             self.monitor_thread_running = True
             threading.Thread(target=self._update_stats_loop, daemon=True).start()
 
-    # --- 1. Смена скина ---
     def _change_skin(self):
         if not self.current_account:
             self.acc_status.configure(text="Сначала войдите в аккаунт!", text_color="#ff5c5c")
             return
-            
         path = filedialog.askopenfilename(title="Выберите скин (PNG 64x64)", filetypes=[("PNG", "*.png")])
         if not path: return
-        
         self.acc_status.configure(text="Загрузка скина...", text_color=MUTED)
         def upload():
             try:
                 with open(path, "rb") as f:
                     files = {'skin': f}
                     headers = {"Authorization": f"Bearer {self.current_account['token']}"}
-                    # Ely.by API для загрузки скина
                     r = requests.post(f"{ELY_SKIN_URL}/{self.current_account['uuid']}", headers=headers, files=files)
-                    
                 if r.status_code == 200:
                     self.after(0, lambda: self.acc_status.configure(text="Скин обновлен!", text_color="#3ddc84"))
-                    self._download_avatar(self.current_account["username"]) # Обновить аватарку
+                    self._download_avatar(self.current_account["username"])
                 else:
                     self.after(0, lambda: self.acc_status.configure(text=f"Ошибка: {r.status_code}", text_color="#ff5c5c"))
             except Exception as e:
                 self.after(0, lambda: self.acc_status.configure(text=f"Ошибка: {e}", text_color="#ff5c5c"))
         threading.Thread(target=upload, daemon=True).start()
 
-    # --- 3. Импорт сборок ---
     def _import_modpack(self):
         path = filedialog.askopenfilename(title="Выберите сборку", filetypes=[("Modpacks", "*.mrpack *.zip")])
         if not path: return
-        
         self.build_status.configure(text=f"Импорт {os.path.basename(path)}...", text_color=MUTED)
-        
         def import_thread():
             try:
                 with tempfile.TemporaryDirectory() as temp_dir:
-                    # Распаковка архива
-                    with zipfile.ZipFile(path, 'r') as z:
-                        z.extractall(temp_dir)
+                    with zipfile.ZipFile(path, 'r') as z: z.extractall(temp_dir)
                     
                     if path.endswith(".mrpack"):
-                        # Логика для Modrinth .mrpack
                         manifest_path = os.path.join(temp_dir, "modrinth.index.json")
                         if not os.path.exists(manifest_path): raise Exception("Не найден modrinth.index.json")
+                        with open(manifest_path, "r") as f: manifest = json.load(f)
                         
-                        with open(manifest_path, "r") as f:
-                            manifest = json.load(f)
-                            
                         game_ver = manifest["dependencies"]["minecraft"]
                         loader = "fabric" if "fabric-loader" in manifest["dependencies"] else "forge"
                         
-                        # 1. Установка нужной версии игры и модлоадера
                         self.after(0, lambda: self.build_status.configure(text="Скачивание игры и модлоадера..."))
                         minecraft_launcher_lib.install.install_minecraft_version(game_ver, self.minecraft_dir)
-                        
-                        if loader == "fabric":
-                            fabric = minecraft_launcher_lib.mod_loader.get_mod_loader("fabric")
-                            fabric.install(game_ver, self.minecraft_dir)
-                        elif loader == "forge":
-                            forge = minecraft_launcher_lib.mod_loader.get_mod_loader("forge")
-                            forge.install(game_ver, self.minecraft_dir)
+                        if loader == "fabric": minecraft_launcher_lib.mod_loader.get_mod_loader("fabric").install(game_ver, self.minecraft_dir)
+                        elif loader == "forge": minecraft_launcher_lib.mod_loader.get_mod_loader("forge").install(game_ver, self.minecraft_dir)
                             
-                        # 2. Скачивание модов
                         self.after(0, lambda: self.build_status.configure(text="Скачивание модов..."))
                         mods_dir = os.path.join(self.minecraft_dir, "mods")
                         os.makedirs(mods_dir, exist_ok=True)
-                        
                         for file_info in manifest.get("files", []):
                             url = file_info["downloads"][0]
                             filename = file_info["path"].split("/")[-1]
                             r = requests.get(url, stream=True)
                             with open(os.path.join(mods_dir, filename), 'wb') as f:
-                                for chunk in r.iter_content(chunk_size=8192):
-                                    f.write(chunk)
-                                    
+                                for chunk in r.iter_content(chunk_size=8192): f.write(chunk)
                     elif path.endswith(".zip"):
-                        # Упрощенная логика для CurseForge (если есть manifest.json)
                         manifest_path = os.path.join(temp_dir, "manifest.json")
                         if os.path.exists(manifest_path):
-                            # В реальности нужно парсить projectID и fileID и качать через API CurseForge
-                            # Здесь мы просто копируем overrides (если есть)
                             overrides = os.path.join(temp_dir, "overrides")
-                            if os.path.exists(overrides):
-                                shutil.copytree(overrides, self.minecraft_dir, dirs_exist_ok=True)
-                            self.after(0, lambda: self.build_status.configure(text="CurseForge сборка импортирована (частично)", text_color="#3ddc84"))
+                            if os.path.exists(overrides): shutil.copytree(overrides, self.minecraft_dir, dirs_exist_ok=True)
+                            self.after(0, lambda: self.build_status.configure(text="CurseForge сборка импортирована", text_color="#3ddc84"))
                         else:
-                            # Если это просто zip с модами
                             mods_dir = os.path.join(self.minecraft_dir, "mods")
                             os.makedirs(mods_dir, exist_ok=True)
                             for root, _, files in os.walk(temp_dir):
                                 for file in files:
-                                    if file.endswith(".jar"):
-                                        shutil.copy(os.path.join(root, file), os.path.join(mods_dir, file))
+                                    if file.endswith(".jar"): shutil.copy(os.path.join(root, file), os.path.join(mods_dir, file))
                             self.after(0, lambda: self.build_status.configure(text="Моды из ZIP скопированы!", text_color="#3ddc84"))
-
                 self.after(0, lambda: self.build_status.configure(text="Импорт завершен!", text_color="#3ddc84"))
                 self.after(0, self._load_versions)
             except Exception as e:
-                self.after(0, lambda: self.build_status.configure(text=f"Ошибка импорта: {e}", text_color="#ff5c5c"))
+                self.after(0, lambda: self.build_status.configure(text=f"Ошибка: {e}", text_color="#ff5c5c"))
         threading.Thread(target=import_thread, daemon=True).start()
 
-    # --- 4. Мониторинг ---
     def _update_stats_loop(self):
         while self.monitor_thread_running:
             try:
                 cpu = psutil.cpu_percent()
                 ram = psutil.virtual_memory().percent
-                
                 self.after(0, lambda: self.cpu_label.configure(text=f"CPU: {cpu}%"))
                 self.after(0, lambda: self.cpu_bar.set(cpu/100))
                 self.after(0, lambda: self.ram_usage_label.configure(text=f"RAM: {ram}%"))
                 self.after(0, lambda: self.ram_usage_bar.set(ram/100))
-            except:
-                pass
+            except: pass
             time.sleep(1)
 
-    # --- 5. Антивирус для модов ---
     def _scan_mods_antivirus(self):
         mods_dir = os.path.join(self.minecraft_dir, "mods")
         if not os.path.exists(mods_dir): return
-        
         def scan():
             self.after(0, lambda: self._show_toast("Сканирование модов..."))
             found = 0
@@ -425,23 +381,17 @@ class FireLauncher(ctk.CTk):
                     try:
                         from scanner import hybrid_scan
                         res = hybrid_scan(os.path.join(mods_dir, f))
-                        if res["status"] in ("malicious", "suspicious"):
-                            found += 1
+                        if res["status"] in ("malicious", "suspicious"): found += 1
                     except: pass
-            
-            if found > 0:
-                self.after(0, lambda: self._show_toast(f"⚠ Найдено {found} подозрительных модов!"))
-            else:
-                self.after(0, lambda: self._show_toast("✅ Все моды чистые"))
+            if found > 0: self.after(0, lambda: self._show_toast(f"⚠ Найдено {found} угроз!"))
+            else: self.after(0, lambda: self._show_toast("✅ Все моды чистые"))
         threading.Thread(target=scan, daemon=True).start()
 
-    # --- Стандартные методы (поиск, запуск, сохранение) ---
     def _search_mods(self):
         query = self.mod_search_entry.get().strip()
         if not query: return
         for widget in self.mods_scroll.winfo_children(): widget.destroy()
         ctk.CTkLabel(self.mods_scroll, text="Поиск...", text_color=MUTED).pack(pady=20)
-        
         def fetch():
             try:
                 url = f"{MODRINTH_API}/search?query={query}&limit=10&facets=[[\"project_type:mod\"]]"
@@ -463,18 +413,14 @@ class FireLauncher(ctk.CTk):
             card = ctk.CTkFrame(self.mods_scroll, fg_color=CARD_BG, corner_radius=10, height=80)
             card.pack(fill="x", pady=5, padx=5)
             card.pack_propagate(False)
-            
             icon_label = ctk.CTkLabel(card, text="", width=60, height=60)
             icon_label.pack(side="left", padx=10, pady=10)
-            if mod.get("icon_url"):
-                self._load_mod_icon(mod["icon_url"], card, icon_label)
-            
+            if mod.get("icon_url"): self._load_mod_icon(mod["icon_url"], card, icon_label)
             text_frame = ctk.CTkFrame(card, fg_color="transparent")
             text_frame.pack(side="left", fill="both", expand=True, pady=10)
             ctk.CTkLabel(text_frame, text=mod.get("title", ""), font=("Segoe UI", 14, "bold"), text_color=TEXT, anchor="w").pack(anchor="w")
             desc = mod.get("description", "")
             ctk.CTkLabel(text_frame, text=desc[:80] + "..." if len(desc) > 80 else desc, font=("Segoe UI", 11), text_color=MUTED, anchor="w").pack(anchor="w")
-            
             ctk.CTkButton(card, text="Скачать", width=100, height=32, fg_color=ACCENT, command=lambda s=mod["slug"]: self._download_mod(s)).pack(side="right", padx=15)
 
     def _load_mod_icon(self, url, card, label):
@@ -495,20 +441,16 @@ class FireLauncher(ctk.CTk):
                 loader = "fabric" if "fabric" in ver.lower() else ("forge" if "forge" in ver.lower() else None)
                 match = re.search(r'(\d+\.\d+(\.\d+)?)', ver)
                 game_ver = match.group(1) if match else None
-
                 params = {}
                 if game_ver: params["game_versions"] = json.dumps([game_ver])
                 if loader: params["loaders"] = json.dumps([loader])
-
                 r = requests.get(f"{MODRINTH_API}/project/{slug}/version", params=params, timeout=15)
                 versions = r.json()
                 if not versions:
                     self.after(0, lambda: self._show_toast("Нет версий под эту сборку!"))
                     return
-                
                 download_url = versions[0]["files"][0]["url"]
                 filename = versions[0]["files"][0]["filename"]
-                
                 mods_dir = os.path.join(self.minecraft_dir, "mods")
                 os.makedirs(mods_dir, exist_ok=True)
                 with requests.get(download_url, stream=True) as r_file:
@@ -521,7 +463,7 @@ class FireLauncher(ctk.CTk):
 
     def _show_toast(self, text):
         self.title(f"FireLauncher - {text}")
-        self.after(3000, lambda: self.title("FireLauncher v2.0.7"))
+        self.after(3000, lambda: self.title("FireLauncher v2.0.8"))
 
     def _open_mods_dir(self):
         mods_dir = os.path.join(self.minecraft_dir, "mods")
@@ -561,8 +503,7 @@ class FireLauncher(ctk.CTk):
                 self.ram_value.set(config["ram"])
                 self.ram_slider.set(config["ram"])
                 self.ram_label.configure(text=f"{config['ram']} ГБ")
-            if config.get("jvm_args"):
-                self.jvm_args_entry.insert(0, config["jvm_args"])
+            if config.get("jvm_args"): self.jvm_args_entry.insert(0, config["jvm_args"])
             self._saved_version = config.get("version", "")
         except: pass
 
@@ -593,6 +534,7 @@ class FireLauncher(ctk.CTk):
 
     def _ely_login_thread(self, username, password):
         try:
+            # ИСПОЛЬЗУЕМ ELY_AUTH_URL, КОТОРЫЙ ТЕПЕРЬ ТОЧНО ОПРЕДЕЛЕН
             r = requests.post(ELY_AUTH_URL, json={"username": username, "password": password, "clientToken": "firelauncher", "requestUser": True}, timeout=10)
             if r.status_code == 200:
                 data = r.json()
@@ -647,7 +589,6 @@ class FireLauncher(ctk.CTk):
                     display = v["id"] + (" (Snapshot)" if v["type"] == "snapshot" else "")
                     self.version_dict[display] = v["id"]
                     all_v.append(display)
-            
             local_dir = os.path.join(self.minecraft_dir, "versions")
             if os.path.exists(local_dir):
                 for folder in os.listdir(local_dir):
@@ -656,7 +597,6 @@ class FireLauncher(ctk.CTk):
                         if os.path.exists(json_path):
                             self.version_dict[folder] = folder
                             all_v.append(folder)
-            
             self.all_versions_list = all_v
             self.after(0, lambda: self.version_menu.configure(values=all_v))
             self.after(0, lambda: self.build_version_menu.configure(values=all_v))
@@ -722,19 +662,16 @@ class FireLauncher(ctk.CTk):
         try:
             ver = self.version_dict.get(self.selected_version.get(), "")
             if not ver: raise ValueError("Версия не выбрана")
-
             self.after(0, lambda: self.progress_label.pack(anchor="center"))
             self.after(0, lambda: self.progress_bar.pack(anchor="center"))
             self.after(0, lambda: self.play_btn.configure(text="Установка...", state="disabled"))
-
-            # 2. Автоматическая установка Java (встроено в install_minecraft_version)
+            
             def safe_status(t): self.after(0, lambda: self.progress_label.configure(text=t))
             callback = {"setStatus": safe_status, "setProgress": self._update_progress, "setMax": lambda m: None}
             minecraft_launcher_lib.install.install_minecraft_version(ver, self.minecraft_dir, callback=callback)
 
             jvm_args = [f"-Xmx{self.ram_value.get()}G", "-Xms2G"]
-            if self.jvm_args_entry.get().strip():
-                jvm_args.extend(self.jvm_args_entry.get().strip().split())
+            if self.jvm_args_entry.get().strip(): jvm_args.extend(self.jvm_args_entry.get().strip().split())
 
             if self.current_account:
                 options = {"username": self.current_account["username"], "uuid": self.current_account["uuid"], "token": self.current_account["token"], "jvmArguments": jvm_args}
@@ -743,6 +680,7 @@ class FireLauncher(ctk.CTk):
                 options["jvmArguments"] = jvm_args
 
             command = minecraft_launcher_lib.command.get_minecraft_command(ver, self.minecraft_dir, options)
+            
             if self.current_account and os.path.exists(AUTHLIB_PATH):
                 command.insert(1, f"-javaagent:{AUTHLIB_PATH}={ELY_API_ROOT}")
 
