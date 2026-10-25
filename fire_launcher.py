@@ -47,16 +47,16 @@ TOKEN_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "auth_toke
 MODRINTH_API = "https://mod.mcimirror.top/modrinth/v2"
 
 LAUNCHER_CHANGELOG = """
-🔥 FireLauncher v2.1.0 (Текущая)
-- Добавлена поддержка ресурспаков и шейдеров.
-- Кнопка "Играть" меняется на "Закрыть" после запуска игры.
-- Улучшено поведение лаунчера при запущенной игре.
+🔥 FireLauncher v2.1.1 (Текущая)
+- Вкладка "Моды" теперь показывает ТОП контента, если поиск пуст.
+- Автоматическая загрузка топа при переключении категорий.
+- Исправлена фильтрация по типу контента (моды/шейдеры/рп).
 """
 
 class FireLauncher(ctk.CTk):
     def __init__(self):
         super().__init__()
-        self.title("FireLauncher v2.1.0")
+        self.title("FireLauncher v2.1.1")
         self.geometry("1150x800")
         self.minsize(1050, 700)
         self.configure(fg_color=BG_DARK)
@@ -73,7 +73,6 @@ class FireLauncher(ctk.CTk):
         self.minecraft_dir = DEFAULT_MINECRAFT_DIR
         self.ram_value = ctk.IntVar(value=4)
         
-        # Переменные для отслеживания игры
         self.game_process = None
         self.is_game_running = False
         
@@ -170,7 +169,6 @@ class FireLauncher(ctk.CTk):
         self.fix_btn = ctk.CTkButton(right_bottom, text="🔧 Починить", font=("Segoe UI", 14), fg_color="#333333", hover_color="#444444", width=100, height=40, corner_radius=10, command=self.repair_game)
         self.fix_btn.pack(side="left", padx=(0, 10))
         
-        # Кнопка "Играть" (будет менять текст)
         self.play_btn = ctk.CTkButton(right_bottom, text="▶ ИГРАТЬ", font=("Segoe UI", 18, "bold"), fg_color=ACCENT, hover_color=ACCENT_H, width=150, height=50, corner_radius=10, command=self.start_game)
         self.play_btn.pack(side="left")
         self.frames["play"] = play_frame
@@ -198,16 +196,15 @@ class FireLauncher(ctk.CTk):
         self.build_status.pack(anchor="w", pady=20)
         self.frames["builds"] = build_frame
 
-        # --- Фрейм "Моды" (с ресурспаками и шейдерами) ---
+        # --- Фрейм "Моды" ---
         mods_frame = ctk.CTkFrame(self, fg_color="transparent")
         mods_frame.grid(row=0, column=1, sticky="nsew", padx=30, pady=30)
         
         header_mods = ctk.CTkFrame(mods_frame, fg_color="transparent")
         header_mods.pack(fill="x", pady=(0, 10))
-        ctk.CTkLabel(header_mods, text="Поиск контента", font=("Segoe UI", 28, "bold"), text_color=TEXT).pack(side="left")
+        ctk.CTkLabel(header_mods, text="Топ контента", font=("Segoe UI", 28, "bold"), text_color=TEXT).pack(side="left")
         ctk.CTkButton(header_mods, text="📁 Открыть папку", fg_color="#333333", hover_color="#444444", width=140, height=35, command=self._open_mods_dir).pack(side="right")
 
-        # Переключатель типа контента
         type_frame = ctk.CTkFrame(mods_frame, fg_color="transparent")
         type_frame.pack(fill="x", pady=(0, 10))
         self.content_type_var = ctk.StringVar(value="mods")
@@ -218,7 +215,7 @@ class FireLauncher(ctk.CTk):
         search_frame = ctk.CTkFrame(mods_frame, fg_color="transparent")
         search_frame.pack(fill="x", pady=(0, 15))
         
-        self.mod_search_entry = ctk.CTkEntry(search_frame, placeholder_text="Название...", width=400, height=40, fg_color="#1e1e1e")
+        self.mod_search_entry = ctk.CTkEntry(search_frame, placeholder_text="Поиск (пусто = Топ)", width=400, height=40, fg_color="#1e1e1e")
         self.mod_search_entry.pack(side="left", padx=(0, 10))
         self.mod_search_entry.bind("<Return>", lambda e: self._search_mods())
         ctk.CTkButton(search_frame, text="Найти", fg_color=ACCENT, hover_color=ACCENT_H, width=100, height=40, command=self._search_mods).pack(side="left")
@@ -226,68 +223,9 @@ class FireLauncher(ctk.CTk):
         self.mods_scroll = ctk.CTkScrollableFrame(mods_frame, fg_color="transparent")
         self.mods_scroll.pack(fill="both", expand=True)
         self.frames["mods"] = mods_frame
-
-        # --- Фрейм "Аккаунт" ---
-        acc_frame = ctk.CTkFrame(self, fg_color="transparent")
-        acc_frame.grid(row=0, column=1, sticky="nsew", padx=30, pady=30)
-        ctk.CTkLabel(acc_frame, text="Аккаунт Ely.by", font=("Segoe UI", 28, "bold"), text_color=TEXT).pack(anchor="w", pady=(0, 5))
         
-        self.ely_user = ctk.CTkEntry(acc_frame, placeholder_text="Email или ник", width=300, height=40, fg_color="#1e1e1e")
-        self.ely_user.pack(anchor="w", pady=5)
-        self.ely_pass = ctk.CTkEntry(acc_frame, placeholder_text="Пароль", width=300, height=40, fg_color="#1e1e1e", show="*")
-        self.ely_pass.pack(anchor="w", pady=5)
-        
-        btn_acc = ctk.CTkFrame(acc_frame, fg_color="transparent")
-        btn_acc.pack(anchor="w", pady=15)
-        ctk.CTkButton(btn_acc, text="Войти", fg_color=ACCENT, hover_color=ACCENT_H, height=40, command=self.ely_login).pack(side="left", padx=(0, 10))
-        ctk.CTkButton(btn_acc, text="🎨 Сменить скин", fg_color="#4f8cff", hover_color="#3a75e6", height=40, command=self._change_skin).pack(side="left")
-        
-        self.acc_status = ctk.CTkLabel(acc_frame, text="", font=("Segoe UI", 12), text_color=MUTED)
-        self.acc_status.pack(anchor="w")
-        self.frames["account"] = acc_frame
-
-        # --- Фрейм "Статистика" ---
-        stats_frame = ctk.CTkFrame(self, fg_color="transparent")
-        stats_frame.grid(row=0, column=1, sticky="nsew", padx=30, pady=30)
-        ctk.CTkLabel(stats_frame, text="Мониторинг системы", font=("Segoe UI", 28, "bold"), text_color=TEXT).pack(anchor="w", pady=(0, 20))
-        
-        self.cpu_label = ctk.CTkLabel(stats_frame, text="CPU: 0%", font=("Segoe UI", 18), text_color=TEXT)
-        self.cpu_label.pack(anchor="w", pady=5)
-        self.cpu_bar = ctk.CTkProgressBar(stats_frame, width=400, height=15, progress_color=ACCENT)
-        self.cpu_bar.set(0)
-        self.cpu_bar.pack(anchor="w", pady=(0, 20))
-
-        self.ram_usage_label = ctk.CTkLabel(stats_frame, text="RAM: 0%", font=("Segoe UI", 18), text_color=TEXT)
-        self.ram_usage_label.pack(anchor="w", pady=5)
-        self.ram_usage_bar = ctk.CTkProgressBar(stats_frame, width=400, height=15, progress_color="#4f8cff")
-        self.ram_usage_bar.set(0)
-        self.ram_usage_bar.pack(anchor="w", pady=(0, 20))
-        self.frames["stats"] = stats_frame
-
-        # --- Фрейм "Настройки" ---
-        settings_frame = ctk.CTkFrame(self, fg_color="transparent")
-        settings_frame.grid(row=0, column=1, sticky="nsew", padx=30, pady=30)
-        ctk.CTkLabel(settings_frame, text="Настройки", font=("Segoe UI", 28, "bold"), text_color=TEXT).pack(anchor="w", pady=(0, 30))
-        
-        ctk.CTkLabel(settings_frame, text="Выделяемая память (ОЗУ):", font=("Segoe UI", 14), text_color=TEXT).pack(anchor="w", pady=(0, 5))
-        self.ram_slider = ctk.CTkSlider(settings_frame, from_=2, to=16, number_of_steps=14, command=self._update_ram_label)
-        self.ram_slider.pack(anchor="w", pady=5)
-        self.ram_slider.set(4)
-        self.ram_label = ctk.CTkLabel(settings_frame, text="4 ГБ", font=("Segoe UI", 12), text_color=MUTED)
-        self.ram_label.pack(anchor="w")
-
-        ctk.CTkLabel(settings_frame, text="Дополнительные JVM-аргументы:", font=("Segoe UI", 14), text_color=TEXT).pack(anchor="w", pady=(20, 5))
-        self.jvm_args_entry = ctk.CTkEntry(settings_frame, placeholder_text="-XX:+UseG1GC", width=500, height=35, fg_color="#1e1e1e")
-        self.jvm_args_entry.pack(anchor="w", pady=5)
-
-        ctk.CTkLabel(settings_frame, text="Папка с игрой:", font=("Segoe UI", 14), text_color=TEXT).pack(anchor="w", pady=(20, 5))
-        self.folder_label = ctk.CTkLabel(settings_frame, text=self.minecraft_dir, font=("Segoe UI", 11), text_color=MUTED, wraplength=500)
-        self.folder_label.pack(anchor="w", pady=5)
-        folder_btn_frame = ctk.CTkFrame(settings_frame, fg_color="transparent")
-        folder_btn_frame.pack(anchor="w", pady=10)
-        ctk.CTkButton(folder_btn_frame, text="Выбрать", fg_color="#4f8cff", hover_color="#3a75e6", command=self._choose_minecraft_dir).pack(side="left", padx=(0, 10))
-        ctk.CTkButton(folder_btn_frame, text="Открыть", fg_color="#333333", hover_color="#444444", command=self._open_minecraft_dir).pack(side="left")
-        self.frames["settings"] = settings_frame
+        # Автозагрузка топа при старте (после построения UI)
+        self.after(1000, self._search_mods)
 
     def _show_frame(self, name):
         for frame in self.frames.values():
@@ -386,15 +324,16 @@ class FireLauncher(ctk.CTk):
         query = self.mod_search_entry.get().strip()
         content_type = self.content_type_var.get()
         
-        if not query and content_type == "mods": return # Для шейдеров/рп можем искать пустые (популярные)
-        
         for widget in self.mods_scroll.winfo_children(): widget.destroy()
-        ctk.CTkLabel(self.mods_scroll, text="Поиск...", text_color=MUTED).pack(pady=20)
+        ctk.CTkLabel(self.mods_scroll, text="Загрузка топа..." if not query else "Поиск...", text_color=MUTED).pack(pady=20)
         
         def fetch():
             try:
+                # Формируем запрос: если пусто - сортируем по скачиваниям (топ)
+                # facet для фильтрации по типу проекта
                 facet = f'[["project_type:{content_type}"]]'
-                url = f"{MODRINTH_API}/search?query={query}&limit=10&facets={facet}"
+                url = f"{MODRINTH_API}/search?query={query}&limit=15&facets={facet}&index=downloads"
+                
                 headers = {"User-Agent": "Mozilla/5.0"}
                 r = requests.get(url, headers=headers, timeout=15)
                 data = r.json()
@@ -419,8 +358,13 @@ class FireLauncher(ctk.CTk):
             text_frame = ctk.CTkFrame(card, fg_color="transparent")
             text_frame.pack(side="left", fill="both", expand=True, pady=10)
             ctk.CTkLabel(text_frame, text=mod.get("title", ""), font=("Segoe UI", 14, "bold"), text_color=TEXT, anchor="w").pack(anchor="w")
+            
+            # Добавляем инфу о загрузках, чтобы было видно, что это топ
+            downloads = mod.get("downloads", 0)
+            dl_text = f"{downloads / 1000000:.1f}M" if downloads > 1000000 else f"{downloads / 1000:.0f}K"
+            
             desc = mod.get("description", "")
-            ctk.CTkLabel(text_frame, text=desc[:80] + "..." if len(desc) > 80 else desc, font=("Segoe UI", 11), text_color=MUTED, anchor="w").pack(anchor="w")
+            ctk.CTkLabel(text_frame, text=f"📥 {dl_text} | {desc[:60]}...", font=("Segoe UI", 11), text_color=MUTED, anchor="w").pack(anchor="w")
             ctk.CTkButton(card, text="Скачать", width=100, height=32, fg_color=ACCENT, command=lambda s=mod["slug"], t=self.content_type_var.get(): self._download_mod(s, t)).pack(side="right", padx=15)
 
     def _load_mod_icon(self, url, card, label):
@@ -439,7 +383,6 @@ class FireLauncher(ctk.CTk):
             try:
                 ver = self.version_dict.get(self.selected_version.get(), "")
                 
-                # Для шейдеров и ресурспаков лоадер не важен
                 loader = None
                 if content_type == "mods":
                     loader = "fabric" if "fabric" in ver.lower() else ("forge" if "forge" in ver.lower() else None)
@@ -462,13 +405,9 @@ class FireLauncher(ctk.CTk):
                 download_url = versions[0]["files"][0]["url"]
                 filename = versions[0]["files"][0]["filename"]
                 
-                # Определяем папку в зависимости от типа
-                if content_type == "mods":
-                    folder = "mods"
-                elif content_type == "shaders":
-                    folder = "shaderpacks"
-                else:
-                    folder = "resourcepacks"
+                if content_type == "mods": folder = "mods"
+                elif content_type == "shaders": folder = "shaderpacks"
+                else: folder = "resourcepacks"
                 
                 dest_dir = os.path.join(self.minecraft_dir, folder)
                 os.makedirs(dest_dir, exist_ok=True)
@@ -483,7 +422,7 @@ class FireLauncher(ctk.CTk):
 
     def _show_toast(self, text):
         self.title(f"FireLauncher - {text}")
-        self.after(3000, lambda: self.title("FireLauncher v2.1.0"))
+        self.after(3000, lambda: self.title("FireLauncher v2.1.1"))
 
     def _open_mods_dir(self):
         content_type = self.content_type_var.get()
@@ -681,7 +620,6 @@ class FireLauncher(ctk.CTk):
         if total and total > 0:
             self.after(0, lambda: self.progress_bar.set(current / total))
 
-    # --- ЛОГИКА ЗАПУСКА И ОТСЛЕЖИВАНИЯ ИГРЫ ---
     def _run_game_logic(self):
         try:
             ver = self.version_dict.get(self.selected_version.get(), "")
@@ -713,19 +651,16 @@ class FireLauncher(ctk.CTk):
             log_dir = os.path.join(self.minecraft_dir, "logs")
             os.makedirs(log_dir, exist_ok=True)
             with open(os.path.join(log_dir, "launcher_last.log"), "w") as log:
-                # Сохраняем процесс, чтобы можно было его убить
                 self.game_process = subprocess.Popen(command, cwd=self.minecraft_dir, stdout=log, stderr=log)
             
-            # Ждем немного, чтобы процесс точно стартовал
             time.sleep(2)
             
-            if self.game_process.poll() is None: # Если процесс жив
+            if self.game_process.poll() is None:
                 self.is_game_running = True
                 self.after(0, lambda: self.play_btn.configure(text="⏹ ЗАКРЫТЬ", fg_color="#ff5c5c", hover_color="#e64a19", state="normal"))
                 self.after(0, lambda: self.desc_label.configure(text="Игра запущена!"))
                 self._watch_game_process()
             else:
-                # Если вылетела сразу
                 self.after(0, lambda: self.desc_label.configure(text="Игра вылетела при запуске (проверь логи)"))
                 self.after(0, lambda: self.play_btn.configure(text="▶ ИГРАТЬ", fg_color=ACCENT, hover_color=ACCENT_H, state="normal"))
 
@@ -738,10 +673,8 @@ class FireLauncher(ctk.CTk):
             self.is_installing = False
 
     def _watch_game_process(self):
-        """Ждет завершения процесса игры и возвращает кнопку в исходное состояние."""
         def watch():
-            self.game_process.wait() # Блокируем поток, пока игра работает
-            # Когда игра закрылась:
+            self.game_process.wait()
             self.is_game_running = False
             self.after(0, lambda: self.play_btn.configure(text="▶ ИГРАТЬ", fg_color=ACCENT, hover_color=ACCENT_H, state="normal"))
             self.after(0, lambda: self.desc_label.configure(text="Игра закрыта."))
@@ -750,7 +683,6 @@ class FireLauncher(ctk.CTk):
     def start_game(self):
         if self.is_installing: return
         if self.is_game_running:
-            # Если игра уже запущена — убиваем процесс
             if self.game_process:
                 self.game_process.terminate()
                 self.desc_label.configure(text="Завершение игры...")
