@@ -30,8 +30,16 @@ SELECT_BG  = "#2c2c2c"
 CARD_BG    = "#252525"
 
 DEFAULT_MINECRAFT_DIR = minecraft_launcher_lib.utils.get_minecraft_directory()
-AUTHLIB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "authlib-injector.jar")
-ELY_AUTH_URL = "https://authserver.ely.by/auth/authenticate"
+import sys
+
+if getattr(sys, 'frozen', False):
+    # Если это собранный EXE (PyInstaller)
+    # Ищем файл там, куда PyInstaller его распаковал (в _MEIPASS)
+    AUTHLIB_PATH = os.path.join(sys._MEIPASS, "authlib-injector.jar")
+else:
+    # Если запущен обычный .py скрипт
+    AUTHLIB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "authlib-injector.jar")
+    ELY_AUTH_URL = "https://authserver.ely.by/auth/authenticate"
 ELY_SKIN_URL = "https://authserver.ely.by/api/skins"
 ELY_API_ROOT = "ely.by"
 
@@ -52,7 +60,7 @@ LAUNCHER_CHANGELOG = """
 class FireLauncher(ctk.CTk):
     def __init__(self):
         super().__init__()
-        self.title("FireLauncher v2.0.3")
+        self.title("FireLauncher v2.0.7")
         self.geometry("1150x800")
         self.minsize(1050, 700)
         self.configure(fg_color=BG_DARK)
@@ -513,7 +521,7 @@ class FireLauncher(ctk.CTk):
 
     def _show_toast(self, text):
         self.title(f"FireLauncher - {text}")
-        self.after(3000, lambda: self.title("FireLauncher v2.0.3"))
+        self.after(3000, lambda: self.title("FireLauncher v2.0.7"))
 
     def _open_mods_dir(self):
         mods_dir = os.path.join(self.minecraft_dir, "mods")
