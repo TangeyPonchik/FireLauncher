@@ -32,13 +32,11 @@ CARD_BG    = "#252525"
 
 DEFAULT_MINECRAFT_DIR = minecraft_launcher_lib.utils.get_minecraft_directory()
 
-# --- ИСПРАВЛЕНИЕ ПУТИ К AUTHLIB ДЛЯ .EXE ---
 if getattr(sys, 'frozen', False):
     AUTHLIB_PATH = os.path.join(sys._MEIPASS, "authlib-injector.jar")
 else:
     AUTHLIB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "authlib-injector.jar")
 
-# --- КОНСТАНТЫ ELY.BY (ТЕ САМЫЕ, КОТОРЫЕ ПОТЕРЯЛИСЬ) ---
 ELY_AUTH_URL = "https://authserver.ely.by/auth/authenticate"
 ELY_SKIN_URL = "https://authserver.ely.by/api/skins"
 ELY_API_ROOT = "ely.by"
@@ -49,15 +47,16 @@ TOKEN_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "auth_toke
 MODRINTH_API = "https://mod.mcimirror.top/modrinth/v2"
 
 LAUNCHER_CHANGELOG = """
-🔥 FireLauncher v2.0.7 (Текущая)
-- Исправлена ошибка ELY_AUTH_URL.
-- Исправлен путь к authlib-injector внутри .exe.
+🔥 FireLauncher v2.1.0 (Текущая)
+- Добавлена поддержка ресурспаков и шейдеров.
+- Кнопка "Играть" меняется на "Закрыть" после запуска игры.
+- Улучшено поведение лаунчера при запущенной игре.
 """
 
 class FireLauncher(ctk.CTk):
     def __init__(self):
         super().__init__()
-        self.title("FireLauncher v2.0.8")
+        self.title("FireLauncher v2.1.0")
         self.geometry("1150x800")
         self.minsize(1050, 700)
         self.configure(fg_color=BG_DARK)
@@ -73,6 +72,10 @@ class FireLauncher(ctk.CTk):
         self.current_account = None
         self.minecraft_dir = DEFAULT_MINECRAFT_DIR
         self.ram_value = ctk.IntVar(value=4)
+        
+        # Переменные для отслеживания игры
+        self.game_process = None
+        self.is_game_running = False
         
         self.frames = {}
         self.avatar_image = None
@@ -166,6 +169,8 @@ class FireLauncher(ctk.CTk):
         right_bottom.pack(side="right", padx=15, pady=15, fill="y")
         self.fix_btn = ctk.CTkButton(right_bottom, text="🔧 Починить", font=("Segoe UI", 14), fg_color="#333333", hover_color="#444444", width=100, height=40, corner_radius=10, command=self.repair_game)
         self.fix_btn.pack(side="left", padx=(0, 10))
+        
+        # Кнопка "Играть" (будет менять текст)
         self.play_btn = ctk.CTkButton(right_bottom, text="▶ ИГРАТЬ", font=("Segoe UI", 18, "bold"), fg_color=ACCENT, hover_color=ACCENT_H, width=150, height=50, corner_radius=10, command=self.start_game)
         self.play_btn.pack(side="left")
         self.frames["play"] = play_frame
@@ -193,20 +198,27 @@ class FireLauncher(ctk.CTk):
         self.build_status.pack(anchor="w", pady=20)
         self.frames["builds"] = build_frame
 
-        # --- Фрейм "Моды" ---
+        # --- Фрейм "Моды" (с ресурспаками и шейдерами) ---
         mods_frame = ctk.CTkFrame(self, fg_color="transparent")
         mods_frame.grid(row=0, column=1, sticky="nsew", padx=30, pady=30)
         
         header_mods = ctk.CTkFrame(mods_frame, fg_color="transparent")
-        header_mods.pack(fill="x", pady=(0, 20))
-        ctk.CTkLabel(header_mods, text="Поиск модов", font=("Segoe UI", 28, "bold"), text_color=TEXT).pack(side="left")
-        ctk.CTkButton(header_mods, text="🛡 Проверить моды", fg_color="#ff5c5c", hover_color="#e64a19", width=140, height=35, command=self._scan_mods_antivirus).pack(side="right", padx=5)
+        header_mods.pack(fill="x", pady=(0, 10))
+        ctk.CTkLabel(header_mods, text="Поиск контента", font=("Segoe UI", 28, "bold"), text_color=TEXT).pack(side="left")
         ctk.CTkButton(header_mods, text="📁 Открыть папку", fg_color="#333333", hover_color="#444444", width=140, height=35, command=self._open_mods_dir).pack(side="right")
+
+        # Переключатель типа контента
+        type_frame = ctk.CTkFrame(mods_frame, fg_color="transparent")
+        type_frame.pack(fill="x", pady=(0, 10))
+        self.content_type_var = ctk.StringVar(value="mods")
+        ctk.CTkRadioButton(type_frame, text="Моды", variable=self.content_type_var, value="mods", command=self._search_mods, fg_color=ACCENT).pack(side="left", padx=(0, 15))
+        ctk.CTkRadioButton(type_frame, text="Шейдеры", variable=self.content_type_var, value="shaders", command=self._search_mods, fg_color=ACCENT).pack(side="left", padx=(0, 15))
+        ctk.CTkRadioButton(type_frame, text="Ресурспаки", variable=self.content_type_var, value="resourcepacks", command=self._search_mods, fg_color=ACCENT).pack(side="left")
 
         search_frame = ctk.CTkFrame(mods_frame, fg_color="transparent")
         search_frame.pack(fill="x", pady=(0, 15))
         
-        self.mod_search_entry = ctk.CTkEntry(search_frame, placeholder_text="Название мода (Sodium, JEI...)", width=400, height=40, fg_color="#1e1e1e")
+        self.mod_search_entry = ctk.CTkEntry(search_frame, placeholder_text="Название...", width=400, height=40, fg_color="#1e1e1e")
         self.mod_search_entry.pack(side="left", padx=(0, 10))
         self.mod_search_entry.bind("<Return>", lambda e: self._search_mods())
         ctk.CTkButton(search_frame, text="Найти", fg_color=ACCENT, hover_color=ACCENT_H, width=100, height=40, command=self._search_mods).pack(side="left")
@@ -330,7 +342,7 @@ class FireLauncher(ctk.CTk):
                         if loader == "fabric": minecraft_launcher_lib.mod_loader.get_mod_loader("fabric").install(game_ver, self.minecraft_dir)
                         elif loader == "forge": minecraft_launcher_lib.mod_loader.get_mod_loader("forge").install(game_ver, self.minecraft_dir)
                             
-                        self.after(0, lambda: self.build_status.configure(text="Скачивание модов..."))
+                        self.after(0, lambda: self.build_status.configure(text="Скачивание контента..."))
                         mods_dir = os.path.join(self.minecraft_dir, "mods")
                         os.makedirs(mods_dir, exist_ok=True)
                         for file_info in manifest.get("files", []):
@@ -370,31 +382,19 @@ class FireLauncher(ctk.CTk):
             except: pass
             time.sleep(1)
 
-    def _scan_mods_antivirus(self):
-        mods_dir = os.path.join(self.minecraft_dir, "mods")
-        if not os.path.exists(mods_dir): return
-        def scan():
-            self.after(0, lambda: self._show_toast("Сканирование модов..."))
-            found = 0
-            for f in os.listdir(mods_dir):
-                if f.endswith(".jar"):
-                    try:
-                        from scanner import hybrid_scan
-                        res = hybrid_scan(os.path.join(mods_dir, f))
-                        if res["status"] in ("malicious", "suspicious"): found += 1
-                    except: pass
-            if found > 0: self.after(0, lambda: self._show_toast(f"⚠ Найдено {found} угроз!"))
-            else: self.after(0, lambda: self._show_toast("✅ Все моды чистые"))
-        threading.Thread(target=scan, daemon=True).start()
-
     def _search_mods(self):
         query = self.mod_search_entry.get().strip()
-        if not query: return
+        content_type = self.content_type_var.get()
+        
+        if not query and content_type == "mods": return # Для шейдеров/рп можем искать пустые (популярные)
+        
         for widget in self.mods_scroll.winfo_children(): widget.destroy()
         ctk.CTkLabel(self.mods_scroll, text="Поиск...", text_color=MUTED).pack(pady=20)
+        
         def fetch():
             try:
-                url = f"{MODRINTH_API}/search?query={query}&limit=10&facets=[[\"project_type:mod\"]]"
+                facet = f'[["project_type:{content_type}"]]'
+                url = f"{MODRINTH_API}/search?query={query}&limit=10&facets={facet}"
                 headers = {"User-Agent": "Mozilla/5.0"}
                 r = requests.get(url, headers=headers, timeout=15)
                 data = r.json()
@@ -421,7 +421,7 @@ class FireLauncher(ctk.CTk):
             ctk.CTkLabel(text_frame, text=mod.get("title", ""), font=("Segoe UI", 14, "bold"), text_color=TEXT, anchor="w").pack(anchor="w")
             desc = mod.get("description", "")
             ctk.CTkLabel(text_frame, text=desc[:80] + "..." if len(desc) > 80 else desc, font=("Segoe UI", 11), text_color=MUTED, anchor="w").pack(anchor="w")
-            ctk.CTkButton(card, text="Скачать", width=100, height=32, fg_color=ACCENT, command=lambda s=mod["slug"]: self._download_mod(s)).pack(side="right", padx=15)
+            ctk.CTkButton(card, text="Скачать", width=100, height=32, fg_color=ACCENT, command=lambda s=mod["slug"], t=self.content_type_var.get(): self._download_mod(s, t)).pack(side="right", padx=15)
 
     def _load_mod_icon(self, url, card, label):
         def fetch():
@@ -434,27 +434,47 @@ class FireLauncher(ctk.CTk):
             except: pass
         threading.Thread(target=fetch, daemon=True).start()
 
-    def _download_mod(self, slug):
+    def _download_mod(self, slug, content_type):
         def fetch():
             try:
                 ver = self.version_dict.get(self.selected_version.get(), "")
-                loader = "fabric" if "fabric" in ver.lower() else ("forge" if "forge" in ver.lower() else None)
+                
+                # Для шейдеров и ресурспаков лоадер не важен
+                loader = None
+                if content_type == "mods":
+                    loader = "fabric" if "fabric" in ver.lower() else ("forge" if "forge" in ver.lower() else None)
+                
                 match = re.search(r'(\d+\.\d+(\.\d+)?)', ver)
                 game_ver = match.group(1) if match else None
+                
                 params = {}
-                if game_ver: params["game_versions"] = json.dumps([game_ver])
-                if loader: params["loaders"] = json.dumps([loader])
+                if game_ver and content_type == "mods": 
+                    params["game_versions"] = json.dumps([game_ver])
+                if loader: 
+                    params["loaders"] = json.dumps([loader])
+                
                 r = requests.get(f"{MODRINTH_API}/project/{slug}/version", params=params, timeout=15)
                 versions = r.json()
                 if not versions:
                     self.after(0, lambda: self._show_toast("Нет версий под эту сборку!"))
                     return
+                
                 download_url = versions[0]["files"][0]["url"]
                 filename = versions[0]["files"][0]["filename"]
-                mods_dir = os.path.join(self.minecraft_dir, "mods")
-                os.makedirs(mods_dir, exist_ok=True)
+                
+                # Определяем папку в зависимости от типа
+                if content_type == "mods":
+                    folder = "mods"
+                elif content_type == "shaders":
+                    folder = "shaderpacks"
+                else:
+                    folder = "resourcepacks"
+                
+                dest_dir = os.path.join(self.minecraft_dir, folder)
+                os.makedirs(dest_dir, exist_ok=True)
+                
                 with requests.get(download_url, stream=True) as r_file:
-                    with open(os.path.join(mods_dir, filename), "wb") as f:
+                    with open(os.path.join(dest_dir, filename), "wb") as f:
                         for chunk in r_file.iter_content(8192): f.write(chunk)
                 self.after(0, lambda: self._show_toast(f"{filename} скачан!"))
             except Exception as e:
@@ -463,12 +483,16 @@ class FireLauncher(ctk.CTk):
 
     def _show_toast(self, text):
         self.title(f"FireLauncher - {text}")
-        self.after(3000, lambda: self.title("FireLauncher v2.0.8"))
+        self.after(3000, lambda: self.title("FireLauncher v2.1.0"))
 
     def _open_mods_dir(self):
-        mods_dir = os.path.join(self.minecraft_dir, "mods")
-        os.makedirs(mods_dir, exist_ok=True)
-        os.startfile(mods_dir)
+        content_type = self.content_type_var.get()
+        if content_type == "mods": folder = "mods"
+        elif content_type == "shaders": folder = "shaderpacks"
+        else: folder = "resourcepacks"
+        dest_dir = os.path.join(self.minecraft_dir, folder)
+        os.makedirs(dest_dir, exist_ok=True)
+        os.startfile(dest_dir)
 
     def _save_config(self):
         config = {
@@ -534,7 +558,6 @@ class FireLauncher(ctk.CTk):
 
     def _ely_login_thread(self, username, password):
         try:
-            # ИСПОЛЬЗУЕМ ELY_AUTH_URL, КОТОРЫЙ ТЕПЕРЬ ТОЧНО ОПРЕДЕЛЕН
             r = requests.post(ELY_AUTH_URL, json={"username": username, "password": password, "clientToken": "firelauncher", "requestUser": True}, timeout=10)
             if r.status_code == 200:
                 data = r.json()
@@ -658,10 +681,12 @@ class FireLauncher(ctk.CTk):
         if total and total > 0:
             self.after(0, lambda: self.progress_bar.set(current / total))
 
+    # --- ЛОГИКА ЗАПУСКА И ОТСЛЕЖИВАНИЯ ИГРЫ ---
     def _run_game_logic(self):
         try:
             ver = self.version_dict.get(self.selected_version.get(), "")
             if not ver: raise ValueError("Версия не выбрана")
+            
             self.after(0, lambda: self.progress_label.pack(anchor="center"))
             self.after(0, lambda: self.progress_bar.pack(anchor="center"))
             self.after(0, lambda: self.play_btn.configure(text="Установка...", state="disabled"))
@@ -688,17 +713,49 @@ class FireLauncher(ctk.CTk):
             log_dir = os.path.join(self.minecraft_dir, "logs")
             os.makedirs(log_dir, exist_ok=True)
             with open(os.path.join(log_dir, "launcher_last.log"), "w") as log:
-                subprocess.Popen(command, cwd=self.minecraft_dir, stdout=log, stderr=log)
+                # Сохраняем процесс, чтобы можно было его убить
+                self.game_process = subprocess.Popen(command, cwd=self.minecraft_dir, stdout=log, stderr=log)
+            
+            # Ждем немного, чтобы процесс точно стартовал
+            time.sleep(2)
+            
+            if self.game_process.poll() is None: # Если процесс жив
+                self.is_game_running = True
+                self.after(0, lambda: self.play_btn.configure(text="⏹ ЗАКРЫТЬ", fg_color="#ff5c5c", hover_color="#e64a19", state="normal"))
+                self.after(0, lambda: self.desc_label.configure(text="Игра запущена!"))
+                self._watch_game_process()
+            else:
+                # Если вылетела сразу
+                self.after(0, lambda: self.desc_label.configure(text="Игра вылетела при запуске (проверь логи)"))
+                self.after(0, lambda: self.play_btn.configure(text="▶ ИГРАТЬ", fg_color=ACCENT, hover_color=ACCENT_H, state="normal"))
+
         except Exception as e:
             self.after(0, lambda: self.desc_label.configure(text=f"Ошибка: {e}", text_color="#ff5c5c"))
+            self.after(0, lambda: self.play_btn.configure(text="▶ ИГРАТЬ", fg_color=ACCENT, hover_color=ACCENT_H, state="normal"))
         finally:
-            self.after(0, lambda: self.play_btn.configure(text="▶ ИГРАТЬ", state="normal"))
             self.after(0, lambda: self.progress_bar.pack_forget())
             self.after(0, lambda: self.progress_label.pack_forget())
             self.is_installing = False
 
+    def _watch_game_process(self):
+        """Ждет завершения процесса игры и возвращает кнопку в исходное состояние."""
+        def watch():
+            self.game_process.wait() # Блокируем поток, пока игра работает
+            # Когда игра закрылась:
+            self.is_game_running = False
+            self.after(0, lambda: self.play_btn.configure(text="▶ ИГРАТЬ", fg_color=ACCENT, hover_color=ACCENT_H, state="normal"))
+            self.after(0, lambda: self.desc_label.configure(text="Игра закрыта."))
+        threading.Thread(target=watch, daemon=True).start()
+
     def start_game(self):
         if self.is_installing: return
+        if self.is_game_running:
+            # Если игра уже запущена — убиваем процесс
+            if self.game_process:
+                self.game_process.terminate()
+                self.desc_label.configure(text="Завершение игры...")
+            return
+
         self.is_installing = True
         threading.Thread(target=self._run_game_logic, daemon=True).start()
 
