@@ -47,16 +47,16 @@ TOKEN_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "auth_toke
 MODRINTH_API = "https://mod.mcimirror.top/modrinth/v2"
 
 LAUNCHER_CHANGELOG = """
-🔥 FireLauncher v2.1.1 (Текущая)
-- Вкладка "Моды" теперь показывает ТОП контента, если поиск пуст.
-- Автоматическая загрузка топа при переключении категорий.
-- Исправлена фильтрация по типу контента (моды/шейдеры/рп).
+🔥 FireLauncher v2.1.2 (Текущая)
+- ВОЗВРАЩЕНА вкладка "Настройки" (слайдер ОЗУ и поле JVM-аргументов).
+- Исправлен баг с вылетом из-за отсутствующего поля jvm_args_entry.
+- Исправлен баг с вылетом при загрузке конфига.
 """
 
 class FireLauncher(ctk.CTk):
     def __init__(self):
         super().__init__()
-        self.title("FireLauncher v2.1.1")
+        self.title("FireLauncher v2.1.2")
         self.geometry("1150x800")
         self.minsize(1050, 700)
         self.configure(fg_color=BG_DARK)
@@ -227,6 +227,68 @@ class FireLauncher(ctk.CTk):
         # Автозагрузка топа при старте (после построения UI)
         self.after(1000, self._search_mods)
 
+        # --- Фрейм "Аккаунт" ---
+        acc_frame = ctk.CTkFrame(self, fg_color="transparent")
+        acc_frame.grid(row=0, column=1, sticky="nsew", padx=30, pady=30)
+        ctk.CTkLabel(acc_frame, text="Аккаунт Ely.by", font=("Segoe UI", 28, "bold"), text_color=TEXT).pack(anchor="w", pady=(0, 5))
+        
+        self.ely_user = ctk.CTkEntry(acc_frame, placeholder_text="Email или ник", width=300, height=40, fg_color="#1e1e1e")
+        self.ely_user.pack(anchor="w", pady=5)
+        self.ely_pass = ctk.CTkEntry(acc_frame, placeholder_text="Пароль", width=300, height=40, fg_color="#1e1e1e", show="*")
+        self.ely_pass.pack(anchor="w", pady=5)
+        
+        btn_acc = ctk.CTkFrame(acc_frame, fg_color="transparent")
+        btn_acc.pack(anchor="w", pady=15)
+        ctk.CTkButton(btn_acc, text="Войти", fg_color=ACCENT, hover_color=ACCENT_H, height=40, command=self.ely_login).pack(side="left", padx=(0, 10))
+        ctk.CTkButton(btn_acc, text="🎨 Сменить скин", fg_color="#4f8cff", hover_color="#3a75e6", height=40, command=self._change_skin).pack(side="left")
+        
+        self.acc_status = ctk.CTkLabel(acc_frame, text="", font=("Segoe UI", 12), text_color=MUTED)
+        self.acc_status.pack(anchor="w")
+        self.frames["account"] = acc_frame
+
+        # --- Фрейм "Статистика" ---
+        stats_frame = ctk.CTkFrame(self, fg_color="transparent")
+        stats_frame.grid(row=0, column=1, sticky="nsew", padx=30, pady=30)
+        ctk.CTkLabel(stats_frame, text="Мониторинг системы", font=("Segoe UI", 28, "bold"), text_color=TEXT).pack(anchor="w", pady=(0, 20))
+        
+        self.cpu_label = ctk.CTkLabel(stats_frame, text="CPU: 0%", font=("Segoe UI", 18), text_color=TEXT)
+        self.cpu_label.pack(anchor="w", pady=5)
+        self.cpu_bar = ctk.CTkProgressBar(stats_frame, width=400, height=15, progress_color=ACCENT)
+        self.cpu_bar.set(0)
+        self.cpu_bar.pack(anchor="w", pady=(0, 20))
+
+        self.ram_usage_label = ctk.CTkLabel(stats_frame, text="RAM: 0%", font=("Segoe UI", 18), text_color=TEXT)
+        self.ram_usage_label.pack(anchor="w", pady=5)
+        self.ram_usage_bar = ctk.CTkProgressBar(stats_frame, width=400, height=15, progress_color="#4f8cff")
+        self.ram_usage_bar.set(0)
+        self.ram_usage_bar.pack(anchor="w", pady=(0, 20))
+        self.frames["stats"] = stats_frame
+
+        # --- Фрейм "Настройки" ---
+        settings_frame = ctk.CTkFrame(self, fg_color="transparent")
+        settings_frame.grid(row=0, column=1, sticky="nsew", padx=30, pady=30)
+        ctk.CTkLabel(settings_frame, text="Настройки", font=("Segoe UI", 28, "bold"), text_color=TEXT).pack(anchor="w", pady=(0, 30))
+        
+        ctk.CTkLabel(settings_frame, text="Выделяемая память (ОЗУ):", font=("Segoe UI", 14), text_color=TEXT).pack(anchor="w", pady=(0, 5))
+        self.ram_slider = ctk.CTkSlider(settings_frame, from_=2, to=16, number_of_steps=14, command=self._update_ram_label)
+        self.ram_slider.pack(anchor="w", pady=5)
+        self.ram_slider.set(4)
+        self.ram_label = ctk.CTkLabel(settings_frame, text="4 ГБ", font=("Segoe UI", 12), text_color=MUTED)
+        self.ram_label.pack(anchor="w")
+
+        ctk.CTkLabel(settings_frame, text="Дополнительные JVM-аргументы:", font=("Segoe UI", 14), text_color=TEXT).pack(anchor="w", pady=(20, 5))
+        self.jvm_args_entry = ctk.CTkEntry(settings_frame, placeholder_text="-XX:+UseG1GC", width=500, height=35, fg_color="#1e1e1e")
+        self.jvm_args_entry.pack(anchor="w", pady=5)
+
+        ctk.CTkLabel(settings_frame, text="Папка с игрой:", font=("Segoe UI", 14), text_color=TEXT).pack(anchor="w", pady=(20, 5))
+        self.folder_label = ctk.CTkLabel(settings_frame, text=self.minecraft_dir, font=("Segoe UI", 11), text_color=MUTED, wraplength=500)
+        self.folder_label.pack(anchor="w", pady=5)
+        folder_btn_frame = ctk.CTkFrame(settings_frame, fg_color="transparent")
+        folder_btn_frame.pack(anchor="w", pady=10)
+        ctk.CTkButton(folder_btn_frame, text="Выбрать", fg_color="#4f8cff", hover_color="#3a75e6", command=self._choose_minecraft_dir).pack(side="left", padx=(0, 10))
+        ctk.CTkButton(folder_btn_frame, text="Открыть", fg_color="#333333", hover_color="#444444", command=self._open_minecraft_dir).pack(side="left")
+        self.frames["settings"] = settings_frame
+
     def _show_frame(self, name):
         for frame in self.frames.values():
             frame.grid_forget()
@@ -329,11 +391,8 @@ class FireLauncher(ctk.CTk):
         
         def fetch():
             try:
-                # Формируем запрос: если пусто - сортируем по скачиваниям (топ)
-                # facet для фильтрации по типу проекта
                 facet = f'[["project_type:{content_type}"]]'
                 url = f"{MODRINTH_API}/search?query={query}&limit=15&facets={facet}&index=downloads"
-                
                 headers = {"User-Agent": "Mozilla/5.0"}
                 r = requests.get(url, headers=headers, timeout=15)
                 data = r.json()
@@ -359,7 +418,6 @@ class FireLauncher(ctk.CTk):
             text_frame.pack(side="left", fill="both", expand=True, pady=10)
             ctk.CTkLabel(text_frame, text=mod.get("title", ""), font=("Segoe UI", 14, "bold"), text_color=TEXT, anchor="w").pack(anchor="w")
             
-            # Добавляем инфу о загрузках, чтобы было видно, что это топ
             downloads = mod.get("downloads", 0)
             dl_text = f"{downloads / 1000000:.1f}M" if downloads > 1000000 else f"{downloads / 1000:.0f}K"
             
@@ -422,7 +480,7 @@ class FireLauncher(ctk.CTk):
 
     def _show_toast(self, text):
         self.title(f"FireLauncher - {text}")
-        self.after(3000, lambda: self.title("FireLauncher v2.1.1"))
+        self.after(3000, lambda: self.title("FireLauncher v2.1.2"))
 
     def _open_mods_dir(self):
         content_type = self.content_type_var.get()
@@ -466,7 +524,8 @@ class FireLauncher(ctk.CTk):
                 self.ram_value.set(config["ram"])
                 self.ram_slider.set(config["ram"])
                 self.ram_label.configure(text=f"{config['ram']} ГБ")
-            if config.get("jvm_args"): self.jvm_args_entry.insert(0, config["jvm_args"])
+            if config.get("jvm_args") and hasattr(self, "jvm_args_entry"):
+                self.jvm_args_entry.insert(0, config["jvm_args"])
             self._saved_version = config.get("version", "")
         except: pass
 
