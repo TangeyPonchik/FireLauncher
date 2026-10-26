@@ -15,6 +15,7 @@ import tempfile
 import sys
 import ctypes
 import webbrowser
+import math
 from io import BytesIO
 from PIL import Image
 from tkinter import filedialog
@@ -51,15 +52,22 @@ MODRINTH_API = "https://mod.mcimirror.top/modrinth/v2"
 GITHUB_REPO = "TangeyPonchik/FireLauncher"
 
 LAUNCHER_CHANGELOG = """
-🔥 FireLauncher v2.3.0 (Текущая)
-- Добавлена система анонсов обновлений через GitHub.
-- Если вышла новая версия, лаунчер предложит её скачать.
+🔥 FireLauncher v2.3.2 (Текущая)
+- Исправлено мигание при запуске окна (плавный fade-in).
+- Добавлена пульсация кнопки "Играть".
+- Добавлена плавная анимация появления карточек в поиске.
+- Плавное заполнение прогресс-бара.
+- Анимация переключения вкладок.
 """
 
 class FireLauncher(ctk.CTk):
     def __init__(self):
         super().__init__()
-        self.current_version = "2.3.0"
+        
+        # СКРЫВАЕМ ОКНО СРАЗУ, ЧТОБЫ НЕ БЫЛО МИГАНИЯ
+        self.withdraw()
+        
+        self.current_version = "2.3.2"
         self.title(f"FireLauncher v{self.current_version}")
         self.geometry("1150x800")
         self.minsize(1050, 700)
@@ -82,6 +90,10 @@ class FireLauncher(ctk.CTk):
         self.game_process = None
         self.is_game_running = False
         
+        # Для анимаций
+        self._pulse_id = None
+        self._progress_target = 0.0
+        
         # Фильтры версий
         self.show_releases_var = ctk.BooleanVar(value=True)
         self.show_snapshots_var = ctk.BooleanVar(value=False)
@@ -101,16 +113,18 @@ class FireLauncher(ctk.CTk):
         self._load_config()
         threading.Thread(target=self._load_versions, daemon=True).start()
 
+        # Запуск анимаций
         self.after(100, self.fade_in)
         self.after(1500, self._check_github_updates)
+        self.after(1000, self._pulse_play_button)
 
-    def fade_in(self, duration=500):
-        """Плавное появление окна."""
-        self.attributes("-alpha", 0.0)
+    def fade_in(self, duration=400):
+        """Плавное появление окна без мигания (Ease-out)."""
         self.update()
+        self.deiconify()
+        self.attributes("-alpha", 0.0)
         
         hwnd = ctypes.windll.user32.GetParent(self.winfo_id())
-        
         GWL_EXSTYLE = -20
         WS_EX_LAYERED = 0x00080000
         style = ctypes.windll.user32.GetWindowLongW(hwnd, GWL_EXSTYLE)
@@ -121,11 +135,51 @@ class FireLauncher(ctk.CTk):
         
         def step(i=0):
             if i <= steps:
-                alpha = i / steps
+                progress = i / steps
+                alpha = 1 - (1 - progress) ** 3 # Ease-out
                 ctypes.windll.user32.SetLayeredWindowAttributes(hwnd, 0, int(alpha * 255), 2)
                 self.after(delay, lambda: step(i + 1))
+            else:
+                self.attributes("-alpha", 1.0)
         
         step()
+
+    def _pulse_play_button(self):
+        """Пульсация кнопки Играть."""
+        if self.is_game_running or self.is_installing:
+            return
+            
+        if not hasattr(self, "_pulse_step"): self._pulse_step = 0
+        self._pulse_step += 1
+        
+        val = (math.sin(self._pulse_step / 10.0) + 1) / 2
+        
+        # Смешиваем цвета от #ff5722 до #8a2a0a
+        r = int(255 * val + 138 * (1 - val))
+        g = int(87 * val + 42 * (1 - val))
+        b = int(34 * val + 10 * (1 - val))
+        hex_color = f"#{r:02x}{g:02x}{b:02x}"
+        
+        try:
+            self.play_btn.configure(fg_color=hex_color)
+        except: pass
+        
+        self.after(50, self._pulse_play_button)
+
+    def _animate_progress(self):
+        """Плавная анимация прогресс-бара."""
+        if not self.progress_bar.winfo_ismapped():
+            return
+            
+        current = self.progress_bar.get()
+        target = self._progress_target
+        
+        if abs(current - target) > 0.005:
+            new_val = current + (target - current) * 0.15
+            self.progress_bar.set(new_val)
+            self.after(16, self._animate_progress)
+        else:
+            self.progress_bar.set(target)
 
     def _check_github_updates(self):
         def fetch():
@@ -532,13 +586,19 @@ class FireLauncher(ctk.CTk):
         if not mods:
             ctk.CTkLabel(self.mods_scroll, text="Ничего не найдено", text_color=MUTED).pack(pady=20)
             return
-        for mod in mods:
+        
+        # Анимация появления карточек
+        for idx, mod in enumerate(mods):
             card = ctk.CTkFrame(self.mods_scroll, fg_color=CARD_BG, corner_radius=10, height=80)
+            
+            # Сначала карточка прозрачная (мы имитируем это через цвет)
             card.pack(fill="x", pady=5, padx=5)
             card.pack_propagate(False)
+            
             icon_label = ctk.CTkLabel(card, text="", width=60, height=60)
             icon_label.pack(side="left", padx=10, pady=10)
             if mod.get("icon_url"): self._load_mod_icon(mod["icon_url"], card, icon_label)
+            
             text_frame = ctk.CTkFrame(card, fg_color="transparent")
             text_frame.pack(side="left", fill="both", expand=True, pady=10)
             ctk.CTkLabel(text_frame, text=mod.get("title", ""), font=("Segoe UI", 14, "bold"), text_color=TEXT, anchor="w").pack(anchor="w")
@@ -549,6 +609,23 @@ class FireLauncher(ctk.CTk):
             desc = mod.get("description", "")
             ctk.CTkLabel(text_frame, text=f"📥 {dl_text} | {desc[:60]}...", font=("Segoe UI", 11), text_color=MUTED, anchor="w").pack(anchor="w")
             ctk.CTkButton(card, text="Скачать", width=100, height=32, fg_color=ACCENT, command=lambda s=mod["slug"], t=self.content_type_var.get(): self._download_mod(s, t)).pack(side="right", padx=15)
+            
+            # Анимация: карточка "выезжает" (сдвигается)
+            card.pack_forget()
+            card.pack(fill="x", pady=(0, 5), padx=5) # Начинаем с нулевого отступа
+            
+            def animate_card(c=card, delay=idx*50):
+                def step(step_num=0):
+                    if step_num > 10: return
+                    # Меняем отступ (визуальный "сдвиг")
+                    new_pady = (0, 5 + (10 - step_num) * 2)
+                    try:
+                        c.pack_configure(pady=new_pady)
+                    except: pass
+                    self.after(20, lambda: step(step_num + 1))
+                self.after(delay, step)
+            
+            animate_card()
 
     def _load_mod_icon(self, url, card, label):
         def fetch():
@@ -843,7 +920,11 @@ class FireLauncher(ctk.CTk):
 
     def _update_progress(self, current, total=None):
         if total and total > 0:
-            self.after(0, lambda: self.progress_bar.set(current / total))
+            self._progress_target = current / total
+            # Запускаем анимацию, если она еще не запущена
+            if not hasattr(self, "_progress_animating") or not self._progress_animating:
+                self._progress_animating = True
+                self._animate_progress()
 
     def _run_game_logic(self):
         try:
@@ -853,6 +934,9 @@ class FireLauncher(ctk.CTk):
             self.after(0, lambda: self.progress_label.pack(anchor="center"))
             self.after(0, lambda: self.progress_bar.pack(anchor="center"))
             self.after(0, lambda: self.play_btn.configure(text="Установка...", state="disabled"))
+            
+            # Останавливаем пульсацию на время установки
+            self.is_installing = True
             
             def safe_status(t): self.after(0, lambda: self.progress_label.configure(text=t))
             callback = {"setStatus": safe_status, "setProgress": self._update_progress, "setMax": lambda m: None}
@@ -888,21 +972,26 @@ class FireLauncher(ctk.CTk):
             else:
                 self.after(0, lambda: self.desc_label.configure(text="Игра вылетела при запуске (проверь логи)"))
                 self.after(0, lambda: self.play_btn.configure(text="▶ ИГРАТЬ", fg_color=ACCENT, hover_color=ACCENT_H, state="normal"))
+                self.is_installing = False
+                self._pulse_play_button() # Возобновляем пульсацию
 
         except Exception as e:
             self.after(0, lambda: self.desc_label.configure(text=f"Ошибка: {e}", text_color="#ff5c5c"))
             self.after(0, lambda: self.play_btn.configure(text="▶ ИГРАТЬ", fg_color=ACCENT, hover_color=ACCENT_H, state="normal"))
+            self.is_installing = False
+            self._pulse_play_button()
         finally:
             self.after(0, lambda: self.progress_bar.pack_forget())
             self.after(0, lambda: self.progress_label.pack_forget())
-            self.is_installing = False
 
     def _watch_game_process(self):
         def watch():
             self.game_process.wait()
             self.is_game_running = False
+            self.is_installing = False
             self.after(0, lambda: self.play_btn.configure(text="▶ ИГРАТЬ", fg_color=ACCENT, hover_color=ACCENT_H, state="normal"))
             self.after(0, lambda: self.desc_label.configure(text="Игра закрыта."))
+            self._pulse_play_button() # Возобновляем пульсацию
         threading.Thread(target=watch, daemon=True).start()
 
     def start_game(self):
