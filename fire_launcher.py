@@ -52,12 +52,11 @@ MODRINTH_API = "https://mod.mcimirror.top/modrinth/v2"
 GITHUB_REPO = "TangeyPonchik/FireLauncher"
 
 LAUNCHER_CHANGELOG = """
-🔥 FireLauncher v2.3.2 (Текущая)
-- Исправлено мигание при запуске окна (плавный fade-in).
-- Добавлена пульсация кнопки "Играть".
-- Добавлена плавная анимация появления карточек в поиске.
-- Плавное заполнение прогресс-бара.
-- Анимация переключения вкладок.
+🔥 FireLauncher v2.3.3 (Текущая)
+- Исправлено "танцующее" выпадающее меню версий.
+- Удалены оповещения о версиях Minecraft (вызывали баги и вылеты).
+- Добавлена защита от пустого списка версий (при проблемах с сетью).
+- Плавная анимация появления окна и пульсация кнопки Играть.
 """
 
 class FireLauncher(ctk.CTk):
@@ -67,7 +66,7 @@ class FireLauncher(ctk.CTk):
         # СКРЫВАЕМ ОКНО СРАЗУ, ЧТОБЫ НЕ БЫЛО МИГАНИЯ
         self.withdraw()
         
-        self.current_version = "2.3.2"
+        self.current_version = "2.3.3"
         self.title(f"FireLauncher v{self.current_version}")
         self.geometry("1150x800")
         self.minsize(1050, 700)
@@ -103,7 +102,6 @@ class FireLauncher(ctk.CTk):
         self.avatar_image = None
         self.monitor_thread_running = False
         self._saved_version = ""
-        self.last_launch_time = ""
         
         self._build_sidebar()
         self._build_frames()
@@ -270,9 +268,6 @@ class FireLauncher(ctk.CTk):
         
         ctk.CTkLabel(play_frame, text="Добро пожаловать в FireLauncher!", font=("Segoe UI", 28, "bold"), text_color=TEXT).pack(anchor="w", pady=(0, 5))
         
-        self.update_banner = ctk.CTkLabel(play_frame, text="", font=("Segoe UI", 14), text_color="#3ddc84")
-        self.update_banner.pack(anchor="w", pady=(0, 5))
-
         self.desc_label = ctk.CTkLabel(play_frame, text="Выберите версию и нажмите Играть.", font=("Segoe UI", 14), text_color=MUTED)
         self.desc_label.pack(anchor="w", pady=(0, 10))
 
@@ -470,11 +465,19 @@ class FireLauncher(ctk.CTk):
             if (is_release and show_rel) or (is_snapshot and show_snap) or (is_modified and show_mod):
                 self.filtered_versions_list.append(display)
 
+        # --- ЗАЩИТА ОТ ТАНЦЕВ ---
+        if not self.filtered_versions_list:
+            return
+
         self.version_menu.configure(values=self.filtered_versions_list)
         self.build_version_menu.configure(values=self.filtered_versions_list)
         
-        if self.filtered_versions_list:
+        current = self.selected_version.get()
+        if current not in self.filtered_versions_list:
             self.selected_version.set(self.filtered_versions_list[0])
+        
+        current_build = self.build_version_var.get()
+        if current_build not in self.filtered_versions_list:
             self.build_version_var.set(self.filtered_versions_list[0])
 
     def _change_skin(self):
@@ -586,19 +589,13 @@ class FireLauncher(ctk.CTk):
         if not mods:
             ctk.CTkLabel(self.mods_scroll, text="Ничего не найдено", text_color=MUTED).pack(pady=20)
             return
-        
-        # Анимация появления карточек
-        for idx, mod in enumerate(mods):
+        for mod in mods:
             card = ctk.CTkFrame(self.mods_scroll, fg_color=CARD_BG, corner_radius=10, height=80)
-            
-            # Сначала карточка прозрачная (мы имитируем это через цвет)
             card.pack(fill="x", pady=5, padx=5)
             card.pack_propagate(False)
-            
             icon_label = ctk.CTkLabel(card, text="", width=60, height=60)
             icon_label.pack(side="left", padx=10, pady=10)
             if mod.get("icon_url"): self._load_mod_icon(mod["icon_url"], card, icon_label)
-            
             text_frame = ctk.CTkFrame(card, fg_color="transparent")
             text_frame.pack(side="left", fill="both", expand=True, pady=10)
             ctk.CTkLabel(text_frame, text=mod.get("title", ""), font=("Segoe UI", 14, "bold"), text_color=TEXT, anchor="w").pack(anchor="w")
@@ -609,23 +606,6 @@ class FireLauncher(ctk.CTk):
             desc = mod.get("description", "")
             ctk.CTkLabel(text_frame, text=f"📥 {dl_text} | {desc[:60]}...", font=("Segoe UI", 11), text_color=MUTED, anchor="w").pack(anchor="w")
             ctk.CTkButton(card, text="Скачать", width=100, height=32, fg_color=ACCENT, command=lambda s=mod["slug"], t=self.content_type_var.get(): self._download_mod(s, t)).pack(side="right", padx=15)
-            
-            # Анимация: карточка "выезжает" (сдвигается)
-            card.pack_forget()
-            card.pack(fill="x", pady=(0, 5), padx=5) # Начинаем с нулевого отступа
-            
-            def animate_card(c=card, delay=idx*50):
-                def step(step_num=0):
-                    if step_num > 10: return
-                    # Меняем отступ (визуальный "сдвиг")
-                    new_pady = (0, 5 + (10 - step_num) * 2)
-                    try:
-                        c.pack_configure(pady=new_pady)
-                    except: pass
-                    self.after(20, lambda: step(step_num + 1))
-                self.after(delay, step)
-            
-            animate_card()
 
     def _load_mod_icon(self, url, card, label):
         def fetch():
@@ -704,7 +684,6 @@ class FireLauncher(ctk.CTk):
             "show_releases": self.show_releases_var.get(),
             "show_snapshots": self.show_snapshots_var.get(),
             "show_modified": self.show_modified_var.get(),
-            "last_launch": datetime.now().isoformat()
         }
         try:
             with open(CONFIG_FILE, "w") as f: json.dump(config, f, indent=2)
@@ -738,7 +717,6 @@ class FireLauncher(ctk.CTk):
             self.show_modified_var.set(config.get("show_modified", True))
             
             self._saved_version = config.get("version", "")
-            self.last_launch_time = config.get("last_launch", "")
         except: pass
 
     def _update_ram_label(self, value):
@@ -833,45 +811,19 @@ class FireLauncher(ctk.CTk):
                             if folder not in self.version_dict.values():
                                 self.version_dict[folder] = folder
             
+            if not self.version_dict:
+                print("Не удалось загрузить версии (пустой список)")
+                return
+
             self._apply_filters()
-            self._check_new_version()
             
             if hasattr(self, "_saved_version") and self._saved_version in self.filtered_versions_list:
                 self.after(0, lambda: self.selected_version.set(self._saved_version))
                 
         except Exception as e:
-            self.after(0, lambda: self.desc_label.configure(text=f"Ошибка версий: {e}"))
-
-    def _check_new_version(self):
-        if not self.version_dict: return
-        
-        try:
-            last_launch = getattr(self, 'last_launch_time', "")
-            if not last_launch: return
-            
-            try:
-                last_date = datetime.fromisoformat(last_launch)
-            except ValueError:
-                return
-                
-            versions = minecraft_launcher_lib.utils.get_version_list()
-            latest_release = next((v for v in versions if v["type"] == "release"), None)
-            
-            if latest_release:
-                release_date = datetime.strptime(latest_release["releaseTime"], "%Y-%m-%dT%H:%M:%S%z")
-                release_date = release_date.replace(tzinfo=None) 
-                
-                if release_date > last_date:
-                    days_passed = (datetime.now() - release_date).days
-                    if days_passed == 0: time_str = "сегодня"
-                    elif days_passed == 1: time_str = "вчера"
-                    else: time_str = f"{days_passed} дней назад"
-                        
-                    self.after(0, lambda: self.update_banner.configure(
-                        text=f"🔥 Пока вас не было, вышла новая версия {latest_release['id']} ({time_str})!"
-                    ))
-        except Exception as e:
-            print(f"Ошибка проверки обновлений: {e}")
+            err_msg = str(e) if str(e) else "Неизвестная ошибка"
+            self.after(0, lambda: self.desc_label.configure(text=f"Ошибка версий: {err_msg}"))
+            print(f"Ошибка загрузки версий: {err_msg}")
 
     def _update_notes(self, text):
         self.notes_textbox.configure(state="normal")
@@ -921,7 +873,6 @@ class FireLauncher(ctk.CTk):
     def _update_progress(self, current, total=None):
         if total and total > 0:
             self._progress_target = current / total
-            # Запускаем анимацию, если она еще не запущена
             if not hasattr(self, "_progress_animating") or not self._progress_animating:
                 self._progress_animating = True
                 self._animate_progress()
@@ -935,7 +886,6 @@ class FireLauncher(ctk.CTk):
             self.after(0, lambda: self.progress_bar.pack(anchor="center"))
             self.after(0, lambda: self.play_btn.configure(text="Установка...", state="disabled"))
             
-            # Останавливаем пульсацию на время установки
             self.is_installing = True
             
             def safe_status(t): self.after(0, lambda: self.progress_label.configure(text=t))
@@ -973,7 +923,7 @@ class FireLauncher(ctk.CTk):
                 self.after(0, lambda: self.desc_label.configure(text="Игра вылетела при запуске (проверь логи)"))
                 self.after(0, lambda: self.play_btn.configure(text="▶ ИГРАТЬ", fg_color=ACCENT, hover_color=ACCENT_H, state="normal"))
                 self.is_installing = False
-                self._pulse_play_button() # Возобновляем пульсацию
+                self._pulse_play_button()
 
         except Exception as e:
             self.after(0, lambda: self.desc_label.configure(text=f"Ошибка: {e}", text_color="#ff5c5c"))
@@ -991,7 +941,7 @@ class FireLauncher(ctk.CTk):
             self.is_installing = False
             self.after(0, lambda: self.play_btn.configure(text="▶ ИГРАТЬ", fg_color=ACCENT, hover_color=ACCENT_H, state="normal"))
             self.after(0, lambda: self.desc_label.configure(text="Игра закрыта."))
-            self._pulse_play_button() # Возобновляем пульсацию
+            self._pulse_play_button()
         threading.Thread(target=watch, daemon=True).start()
 
     def start_game(self):
