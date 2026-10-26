@@ -16,6 +16,7 @@ import sys
 from io import BytesIO
 from PIL import Image
 from tkinter import filedialog
+from datetime import datetime
 
 # --- Тема ---
 ctk.set_appearance_mode("dark")
@@ -47,16 +48,16 @@ TOKEN_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "auth_toke
 MODRINTH_API = "https://mod.mcimirror.top/modrinth/v2"
 
 LAUNCHER_CHANGELOG = """
-🔥 FireLauncher v2.1.2 (Текущая)
-- ВОЗВРАЩЕНА вкладка "Настройки" (слайдер ОЗУ и поле JVM-аргументов).
-- Исправлен баг с вылетом из-за отсутствующего поля jvm_args_entry.
-- Исправлен баг с вылетом при загрузке конфига.
+🔥 FireLauncher v2.2.0 (Текущая)
+- В настройках появились фильтры версий (Релизы, Снапшоты, Модифицированные).
+- Добавлены уведомления о выходе новых версий при запуске.
+- Исправлено отображение модифицированных версий (Fabric/Forge).
 """
 
 class FireLauncher(ctk.CTk):
     def __init__(self):
         super().__init__()
-        self.title("FireLauncher v2.1.2")
+        self.title("FireLauncher v2.2.0")
         self.geometry("1150x800")
         self.minsize(1050, 700)
         self.configure(fg_color=BG_DARK)
@@ -68,6 +69,8 @@ class FireLauncher(ctk.CTk):
         self.selected_version = ctk.StringVar(value="")
         self.version_dict = {}
         self.all_versions_list = []
+        self.filtered_versions_list = []
+        
         self.is_installing = False
         self.current_account = None
         self.minecraft_dir = DEFAULT_MINECRAFT_DIR
@@ -75,6 +78,11 @@ class FireLauncher(ctk.CTk):
         
         self.game_process = None
         self.is_game_running = False
+        
+        # Фильтры версий по умолчанию
+        self.show_releases_var = ctk.BooleanVar(value=True)
+        self.show_snapshots_var = ctk.BooleanVar(value=False)
+        self.show_modified_var = ctk.BooleanVar(value=True)
         
         self.frames = {}
         self.avatar_image = None
@@ -126,6 +134,11 @@ class FireLauncher(ctk.CTk):
         play_frame.grid(row=0, column=1, sticky="nsew", padx=30, pady=30)
         
         ctk.CTkLabel(play_frame, text="Добро пожаловать в FireLauncher!", font=("Segoe UI", 28, "bold"), text_color=TEXT).pack(anchor="w", pady=(0, 5))
+        
+        # Уведомление о новой версии
+        self.update_banner = ctk.CTkLabel(play_frame, text="", font=("Segoe UI", 14), text_color="#3ddc84")
+        self.update_banner.pack(anchor="w", pady=(0, 5))
+
         self.desc_label = ctk.CTkLabel(play_frame, text="Выберите версию и нажмите Играть.", font=("Segoe UI", 14), text_color=MUTED)
         self.desc_label.pack(anchor="w", pady=(0, 10))
 
@@ -150,7 +163,7 @@ class FireLauncher(ctk.CTk):
         self.search_var = ctk.StringVar()
         self.search_entry = ctk.CTkEntry(left_bottom, textvariable=self.search_var, placeholder_text="Поиск версии", width=150, height=30, fg_color="#121212", border_width=0)
         self.search_entry.pack(side="left", padx=(0, 10))
-        self.search_var.trace_add("write", self._filter_versions)
+        self.search_var.trace_add("write", self._filter_search)
 
         self.version_menu = ctk.CTkOptionMenu(left_bottom, variable=self.selected_version, values=["Загрузка..."], width=180, height=30, fg_color="#2c2c2c", button_color=ACCENT, command=self._on_version_change)
         self.version_menu.pack(side="left")
@@ -224,7 +237,6 @@ class FireLauncher(ctk.CTk):
         self.mods_scroll.pack(fill="both", expand=True)
         self.frames["mods"] = mods_frame
         
-        # Автозагрузка топа при старте (после построения UI)
         self.after(1000, self._search_mods)
 
         # --- Фрейм "Аккаунт" ---
@@ -269,7 +281,17 @@ class FireLauncher(ctk.CTk):
         settings_frame.grid(row=0, column=1, sticky="nsew", padx=30, pady=30)
         ctk.CTkLabel(settings_frame, text="Настройки", font=("Segoe UI", 28, "bold"), text_color=TEXT).pack(anchor="w", pady=(0, 30))
         
-        ctk.CTkLabel(settings_frame, text="Выделяемая память (ОЗУ):", font=("Segoe UI", 14), text_color=TEXT).pack(anchor="w", pady=(0, 5))
+        # Фильтры версий
+        ctk.CTkLabel(settings_frame, text="Какие версии показывать:", font=("Segoe UI", 14), text_color=TEXT).pack(anchor="w", pady=(0, 5))
+        filter_frame = ctk.CTkFrame(settings_frame, fg_color="transparent")
+        filter_frame.pack(anchor="w", pady=5)
+        
+        ctk.CTkCheckBox(filter_frame, text="Релизы", variable=self.show_releases_var, command=self._apply_filters, fg_color=ACCENT).pack(side="left", padx=(0, 15))
+        ctk.CTkCheckBox(filter_frame, text="Снапшоты", variable=self.show_snapshots_var, command=self._apply_filters, fg_color=ACCENT).pack(side="left", padx=(0, 15))
+        ctk.CTkCheckBox(filter_frame, text="Модифицированные", variable=self.show_modified_var, command=self._apply_filters, fg_color=ACCENT).pack(side="left")
+
+        # ОЗУ
+        ctk.CTkLabel(settings_frame, text="Выделяемая память (ОЗУ):", font=("Segoe UI", 14), text_color=TEXT).pack(anchor="w", pady=(20, 5))
         self.ram_slider = ctk.CTkSlider(settings_frame, from_=2, to=16, number_of_steps=14, command=self._update_ram_label)
         self.ram_slider.pack(anchor="w", pady=5)
         self.ram_slider.set(4)
@@ -297,6 +319,28 @@ class FireLauncher(ctk.CTk):
         if name == "stats" and not self.monitor_thread_running:
             self.monitor_thread_running = True
             threading.Thread(target=self._update_stats_loop, daemon=True).start()
+
+    def _apply_filters(self):
+        """Применяет фильтры к выпадающему списку версий."""
+        show_rel = self.show_releases_var.get()
+        show_snap = self.show_snapshots_var.get()
+        show_mod = self.show_modified_var.get()
+
+        self.filtered_versions_list = []
+        for display, real_id in self.version_dict.items():
+            is_release = not ("Snapshot" in display) and not ("fabric" in real_id.lower() or "forge" in real_id.lower())
+            is_snapshot = "Snapshot" in display
+            is_modified = "fabric" in real_id.lower() or "forge" in real_id.lower()
+
+            if (is_release and show_rel) or (is_snapshot and show_snap) or (is_modified and show_mod):
+                self.filtered_versions_list.append(display)
+
+        self.version_menu.configure(values=self.filtered_versions_list)
+        self.build_version_menu.configure(values=self.filtered_versions_list)
+        
+        if self.filtered_versions_list:
+            self.selected_version.set(self.filtered_versions_list[0])
+            self.build_version_var.set(self.filtered_versions_list[0])
 
     def _change_skin(self):
         if not self.current_account:
@@ -480,7 +524,7 @@ class FireLauncher(ctk.CTk):
 
     def _show_toast(self, text):
         self.title(f"FireLauncher - {text}")
-        self.after(3000, lambda: self.title("FireLauncher v2.1.2"))
+        self.after(3000, lambda: self.title("FireLauncher v2.2.0"))
 
     def _open_mods_dir(self):
         content_type = self.content_type_var.get()
@@ -498,7 +542,11 @@ class FireLauncher(ctk.CTk):
             "ram": self.ram_value.get(),
             "jvm_args": self.jvm_args_entry.get().strip(),
             "username": self.current_account["username"] if self.current_account else None,
-            "uuid": self.current_account["uuid"] if self.current_account else None
+            "uuid": self.current_account["uuid"] if self.current_account else None,
+            "show_releases": self.show_releases_var.get(),
+            "show_snapshots": self.show_snapshots_var.get(),
+            "show_modified": self.show_modified_var.get(),
+            "last_launch": datetime.now().isoformat()
         }
         try:
             with open(CONFIG_FILE, "w") as f: json.dump(config, f, indent=2)
@@ -526,7 +574,14 @@ class FireLauncher(ctk.CTk):
                 self.ram_label.configure(text=f"{config['ram']} ГБ")
             if config.get("jvm_args") and hasattr(self, "jvm_args_entry"):
                 self.jvm_args_entry.insert(0, config["jvm_args"])
+            
+            # Загружаем настройки фильтров
+            self.show_releases_var.set(config.get("show_releases", True))
+            self.show_snapshots_var.set(config.get("show_snapshots", False))
+            self.show_modified_var.set(config.get("show_modified", True))
+            
             self._saved_version = config.get("version", "")
+            self.last_launch_time = config.get("last_launch", "")
         except: pass
 
     def _update_ram_label(self, value):
@@ -585,12 +640,12 @@ class FireLauncher(ctk.CTk):
             except: pass
         threading.Thread(target=fetch, daemon=True).start()
 
-    def _filter_versions(self, *args):
+    def _filter_search(self, *args):
         query = self.search_var.get().lower()
         if not query:
-            self.version_menu.configure(values=self.all_versions_list)
+            self.version_menu.configure(values=self.filtered_versions_list)
             return
-        filtered = [v for v in self.all_versions_list if query in v.lower()]
+        filtered = [v for v in self.filtered_versions_list if query in v.lower()]
         self.version_menu.configure(values=filtered)
 
     def _on_version_change(self, choice):
@@ -602,33 +657,72 @@ class FireLauncher(ctk.CTk):
 
     def _load_versions(self):
         try:
+            # Загружаем версии Mojang
             versions = minecraft_launcher_lib.utils.get_version_list()
             self.version_dict = {}
-            all_v = []
+            
             for v in versions:
-                if v["type"] in ("release", "snapshot"):
-                    display = v["id"] + (" (Snapshot)" if v["type"] == "snapshot" else "")
+                if v["type"] == "release":
+                    self.version_dict[v["id"]] = v["id"]
+                elif v["type"] == "snapshot":
+                    display = f"{v['id']} (Snapshot)"
                     self.version_dict[display] = v["id"]
-                    all_v.append(display)
+                    
+            # Ищем локальные модифицированные версии
             local_dir = os.path.join(self.minecraft_dir, "versions")
             if os.path.exists(local_dir):
                 for folder in os.listdir(local_dir):
-                    if ("fabric" in folder.lower() or "forge" in folder.lower()) and folder not in self.version_dict:
+                    if "fabric" in folder.lower() or "forge" in folder.lower():
                         json_path = os.path.join(local_dir, folder, f"{folder}.json")
                         if os.path.exists(json_path):
-                            self.version_dict[folder] = folder
-                            all_v.append(folder)
-            self.all_versions_list = all_v
-            self.after(0, lambda: self.version_menu.configure(values=all_v))
-            self.after(0, lambda: self.build_version_menu.configure(values=all_v))
-            if all_v:
-                self.after(0, lambda: self.selected_version.set(all_v[0]))
-                self.after(0, lambda: self.build_version_var.set(all_v[0]))
-                if hasattr(self, "_saved_version") and self._saved_version in self.version_dict:
-                    self.after(0, lambda: self.selected_version.set(self._saved_version))
-                    self.after(0, lambda: self._on_version_change(self._saved_version))
+                            if folder not in self.version_dict.values():
+                                self.version_dict[folder] = folder
+            
+            self._apply_filters()
+            
+            # Проверка на новую версию (уведомление)
+            self._check_new_version()
+            
+            if hasattr(self, "_saved_version") and self._saved_version in self.filtered_versions_list:
+                self.after(0, lambda: self.selected_version.set(self._saved_version))
+                
         except Exception as e:
             self.after(0, lambda: self.desc_label.configure(text=f"Ошибка версий: {e}"))
+
+    def _check_new_version(self):
+        """Проверяет, вышла ли новая версия с момента последнего запуска."""
+        if not self.version_dict: return
+        
+        try:
+            # Получаем дату последнего запуска (или давно, если не было)
+            last_launch = getattr(self, 'last_launch_time', "")
+            if not last_launch: return
+            
+            last_date = datetime.fromisoformat(last_launch)
+            
+            # Ищем самую новую версию из манифеста
+            versions = minecraft_launcher_lib.utils.get_version_list()
+            latest_release = next((v for v in versions if v["type"] == "release"), None)
+            
+            if latest_release:
+                release_date = datetime.strptime(latest_release["releaseTime"], "%Y-%m-%dT%H:%M:%S%z")
+                # Убираем таймзону для сравнения
+                release_date = release_date.replace(tzinfo=None) 
+                
+                if release_date > last_date:
+                    days_passed = (datetime.now() - release_date).days
+                    if days_passed == 0:
+                        time_str = "сегодня"
+                    elif days_passed == 1:
+                        time_str = "вчера"
+                    else:
+                        time_str = f"{days_passed} дней назад"
+                        
+                    self.after(0, lambda: self.update_banner.configure(
+                        text=f"🔥 Пока вас не было, вышла новая версия {latest_release['id']} ({time_str})!"
+                    ))
+        except Exception as e:
+            print(f"Ошибка проверки обновлений: {e}")
 
     def _update_notes(self, text):
         self.notes_textbox.configure(state="normal")
