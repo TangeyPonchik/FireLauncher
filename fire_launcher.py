@@ -45,8 +45,16 @@ ELY_AUTH_URL = "https://authserver.ely.by/auth/authenticate"
 ELY_SKIN_URL = "https://authserver.ely.by/api/skins"
 ELY_API_ROOT = "ely.by"
 
-CONFIG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "firelauncher_config.json")
-TOKEN_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "auth_token.dat")
+# Определяем, запущены мы как .exe или как .py
+if getattr(sys, 'frozen', False):
+    # Если это .exe, берем папку, где лежит сам .exe
+    BASE_DIR = os.path.dirname(sys.executable)
+else:
+    # Если это скрипт .py
+    BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+CONFIG_FILE = os.path.join(BASE_DIR, "firelauncher_config.json")
+TOKEN_FILE = os.path.join(BASE_DIR, "auth_token.dat")
 
 MODRINTH_API = "https://mod.mcimirror.top/modrinth/v2"
 GITHUB_REPO = "TangeyPonchik/FireLauncher"
@@ -66,7 +74,7 @@ class FireLauncher(ctk.CTk):
         # СКРЫВАЕМ ОКНО СРАЗУ, ЧТОБЫ НЕ БЫЛО МИГАНИЯ
         self.withdraw()
         
-        self.current_version = "2.3.3"
+        self.current_version = "2.3.4"
         self.title(f"FireLauncher v{self.current_version}")
         self.geometry("1150x800")
         self.minsize(1050, 700)
