@@ -1,5 +1,5 @@
 # fire_launcher.py
-# FireLauncher v2.5.0 — полная сборка: все фичи + все фиксы
+# FireLauncher v2.5.0 — фикс "танцующих" версий
 import customtkinter as ctk
 import threading
 import os
@@ -57,22 +57,17 @@ MODRINTH_API = "https://mod.mcimirror.top/modrinth/v2"
 MODRINTH_FALLBACK = "https://api.modrinth.com/v2"
 GITHUB_REPO = "TangeyPonchik/FireLauncher"
 
-# Whitelist хешей, которые не гоняем через VT (ложные срабатывания)
-# authlib-injector модифицирует JVM — VT может ругаться.
-AUTHLIB_WHITELIST_SHA256 = set()
-
 LAUNCHER_CHANGELOG = """
 🔥 FireLauncher v2.5.0
+- Фикс "танцующих" выпадающих списков версий.
 - Инстансы: отдельные папки под каждую сборку.
-- Токен Ely.by шифруется через DPAPI (Windows) / base64+obfuscation (иначе).
+- Токен Ely.by шифруется через DPAPI (Windows) / base64 (иначе).
 - Fallback Modrinth: официальный API, если зеркало недоступно.
 - Проверка ZIP-сигнатуры .jar перед сохранением.
 - Защита от zip-slip при импорте модпаков.
 - Умная починка без удаления папки версии.
 - Таймер игры без двойного учёта.
-- Один цикл статистики.
 """
-
 
 # ---------- Токен: DPAPI / fallback ----------
 def _dpapi_encrypt(data: bytes) -> bytes:
@@ -92,7 +87,6 @@ def _dpapi_encrypt(data: bytes) -> bytes:
     finally:
         ctypes.windll.kernel32.LocalFree(blob_out.pbData)
 
-
 def _dpapi_decrypt(data: bytes) -> bytes:
     if os.name != "nt":
         raise OSError("DPAPI только на Windows")
@@ -110,9 +104,7 @@ def _dpapi_decrypt(data: bytes) -> bytes:
     finally:
         ctypes.windll.kernel32.LocalFree(blob_out.pbData)
 
-
 _TOKEN_MAGIC = b"FLT1"
-
 
 def save_token(token: str):
     if not token:
@@ -130,7 +122,6 @@ def save_token(token: str):
     with open(TOKEN_FILE, "wb") as f:
         f.write(blob)
 
-
 def load_token() -> str:
     if not os.path.exists(TOKEN_FILE):
         return "0"
@@ -138,7 +129,6 @@ def load_token() -> str:
         with open(TOKEN_FILE, "rb") as f:
             blob = f.read()
         if not blob.startswith(_TOKEN_MAGIC):
-            # старый plain-text
             return blob.decode("utf-8", errors="ignore").strip() or "0"
         mode = blob[4:5]
         payload = blob[5:]
@@ -149,7 +139,6 @@ def load_token() -> str:
     except Exception:
         return "0"
 
-
 # ---------- Утилиты ----------
 def safe_extract_zip(zf: zipfile.ZipFile, dest: str):
     dest_real = os.path.realpath(dest)
@@ -159,14 +148,12 @@ def safe_extract_zip(zf: zipfile.ZipFile, dest: str):
             continue
         zf.extract(member, dest_real)
 
-
 def looks_like_jar(path: str) -> bool:
     try:
         with open(path, "rb") as f:
             return f.read(4) == b"PK\x03\x04"
     except Exception:
         return False
-
 
 def download_file(url: str, dest: str, timeout: int = 30, expected_sha512: str = None):
     h = hashlib.sha512() if expected_sha512 else None
@@ -190,13 +177,12 @@ def download_file(url: str, dest: str, timeout: int = 30, expected_sha512: str =
         raise ValueError("sha512 не совпал")
     return total
 
-
 class FireLauncher(ctk.CTk):
     def __init__(self):
         super().__init__()
         self.withdraw()
 
-        self.current_version = "2.5.0"
+        self.current_version = "2.5.1"
         self.title(f"FireLauncher v{self.current_version}")
         self.geometry("1150x800")
         self.minsize(1050, 700)
@@ -209,6 +195,9 @@ class FireLauncher(ctk.CTk):
         self.selected_version = ctk.StringVar(value="")
         self.version_dict = {}
         self.filtered_versions_list = []
+        
+        # Флаг для фикса "танцующих" версий
+        self._dropdown_locked = False
 
         self.is_installing = False
         self.current_account = None
@@ -233,7 +222,7 @@ class FireLauncher(ctk.CTk):
         self._save_timer = None
         self._mod_icons = []
         self._current_frame_name = None
-        self._instances = {}  # name -> path
+        self._instances = {}
 
         os.makedirs(INSTANCES_DIR, exist_ok=True)
 
@@ -310,11 +299,8 @@ class FireLauncher(ctk.CTk):
         if name in ("Default", "Custom"):
             return
         path = self._instances.get(name)
-        if not path:
+        if not path or not os.path.isdir(path):
             return
-        if not os.path.isdir(path):
-            return
-        # Не даём удалить папку, если в ней запущена игра
         if self.is_game_running:
             return
         shutil.rmtree(path, ignore_errors=True)
@@ -468,6 +454,18 @@ class FireLauncher(ctk.CTk):
                                               fg_color="#2c2c2c", button_color=ACCENT,
                                               command=self._on_version_change)
         self.version_menu.pack(side="left")
+        
+        # === ЛОКИРОВКА МЕНЮ ОТ "ТАНЦЕВ" ===
+        def lock_dropdown(event=None):
+            self._dropdown_locked = True
+            
+        def unlock_dropdown(event=None):
+            self._dropdown_locked = False
+            
+        self.version_menu._canvas.bind("<Button-1>", lock_dropdown, add="+")
+        self.version_menu._button_canvas.bind("<Button-1>", lock_dropdown, add="+")
+        self.version_menu.bind("<Unmap>", unlock_dropdown, add="+")
+        self.version_menu.bind("<<ComboboxSelected>>", unlock_dropdown, add="+")
 
         center_bottom = ctk.CTkFrame(bottom_frame, fg_color="transparent")
         center_bottom.pack(side="left", fill="both", expand=True, padx=10, pady=10)
@@ -610,7 +608,6 @@ class FireLauncher(ctk.CTk):
         ctk.CTkLabel(settings_frame, text="Настройки", font=("Segoe UI", 28, "bold"),
                      text_color=TEXT).pack(anchor="w", pady=(0, 30))
 
-        # Инстансы
         ctk.CTkLabel(settings_frame, text="Инстанс:", font=("Segoe UI", 14),
                      text_color=TEXT).pack(anchor="w", pady=(0, 5))
         inst_frame = ctk.CTkFrame(settings_frame, fg_color="transparent")
@@ -753,20 +750,26 @@ class FireLauncher(ctk.CTk):
             self.show_releases_var.set(True)
             show_rel = True
 
-        self.filtered_versions_list = []
+        new_list = []
         for display, real_id in self.version_dict.items():
             is_snap = "Snapshot" in display
             is_mod = any(x in real_id.lower() for x in ("fabric", "forge", "quilt"))
             is_rel = not is_snap and not is_mod
             if (is_rel and show_rel) or (is_snap and show_snap) or (is_mod and show_mod):
-                self.filtered_versions_list.append(display)
+                new_list.append(display)
 
-        if not self.filtered_versions_list:
+        if not new_list:
             return
 
-        self.version_menu.configure(values=self.filtered_versions_list)
-        if hasattr(self, "build_version_menu"):
-            self.build_version_menu.configure(values=self.filtered_versions_list)
+        if new_list == self.filtered_versions_list:
+            return
+            
+        self.filtered_versions_list = new_list
+
+        if not self._dropdown_locked:
+            self.version_menu.configure(values=self.filtered_versions_list)
+            if hasattr(self, "build_version_menu"):
+                self.build_version_menu.configure(values=self.filtered_versions_list)
 
         cur = self.selected_version.get()
         if cur not in self.filtered_versions_list:
@@ -1201,7 +1204,6 @@ class FireLauncher(ctk.CTk):
 
                 download_file(download_url, dest, expected_sha512=expected)
 
-                # Проверка ZIP-сигнатуры для .jar
                 if filename.endswith(".jar") and not looks_like_jar(dest):
                     try:
                         os.remove(dest)
