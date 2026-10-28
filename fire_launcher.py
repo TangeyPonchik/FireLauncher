@@ -1,5 +1,5 @@
 # fire_launcher.py
-# FireLauncher v2.5.0 — фикс "танцующих" версий
+# FireLauncher v2.5.3 (STABLE) — фикс танцев, крашей и анимаций
 import customtkinter as ctk
 import threading
 import os
@@ -58,15 +58,10 @@ MODRINTH_FALLBACK = "https://api.modrinth.com/v2"
 GITHUB_REPO = "TangeyPonchik/FireLauncher"
 
 LAUNCHER_CHANGELOG = """
-🔥 FireLauncher v2.5.0
-- Фикс "танцующих" выпадающих списков версий.
-- Инстансы: отдельные папки под каждую сборку.
-- Токен Ely.by шифруется через DPAPI (Windows) / base64 (иначе).
-- Fallback Modrinth: официальный API, если зеркало недоступно.
-- Проверка ZIP-сигнатуры .jar перед сохранением.
-- Защита от zip-slip при импорте модпаков.
-- Умная починка без удаления папки версии.
-- Таймер игры без двойного учёта.
+🔥 FireLauncher v2.5.3 (STABLE)
+- Убрана анимация появления (вызывала краши и "танцы").
+- Пофикшены вылеты при загрузке списка версий.
+- Окно обновлений больше не крашит лаунчер при закрытии.
 """
 
 # ---------- Токен: DPAPI / fallback ----------
@@ -158,7 +153,7 @@ def looks_like_jar(path: str) -> bool:
 def download_file(url: str, dest: str, timeout: int = 30, expected_sha512: str = None):
     h = hashlib.sha512() if expected_sha512 else None
     r = requests.get(url, stream=True, timeout=timeout,
-                     headers={"User-Agent": "FireLauncher/2.5.0"})
+                     headers={"User-Agent": "FireLauncher/2.5.3"})
     r.raise_for_status()
     total = 0
     with open(dest, "wb") as f:
@@ -180,9 +175,8 @@ def download_file(url: str, dest: str, timeout: int = 30, expected_sha512: str =
 class FireLauncher(ctk.CTk):
     def __init__(self):
         super().__init__()
-        self.withdraw()
-
-        self.current_version = "2.5.2"
+        
+        self.current_version = "2.5.3"
         self.title(f"FireLauncher v{self.current_version}")
         self.geometry("1150x800")
         self.minsize(1050, 700)
@@ -196,9 +190,6 @@ class FireLauncher(ctk.CTk):
         self.version_dict = {}
         self.filtered_versions_list = []
         
-        # Флаг для фикса "танцующих" версий
-        self._dropdown_locked = False
-
         self.is_installing = False
         self.current_account = None
         self.minecraft_dir = DEFAULT_MINECRAFT_DIR
@@ -233,12 +224,13 @@ class FireLauncher(ctk.CTk):
 
         self._load_instances()
         self._load_config()
-        threading.Thread(target=self._load_versions, daemon=True).start()
+        
+        # Запускаем загрузку версий с задержкой, чтобы окно сначала отрисовалось
+        self.after(100, lambda: threading.Thread(target=self._load_versions, daemon=True).start())
 
-        self.after(100, self.fade_in)
-        self.after(1500, self._check_github_updates)
         self.after(1000, self._pulse_play_button)
         self.after(500, self._tick_ui)
+        self.after(2000, self._check_github_updates)
 
     # ---------- Инстансы ----------
     def _load_instances(self):
@@ -308,38 +300,6 @@ class FireLauncher(ctk.CTk):
         self._switch_instance("Default")
 
     # ---------- Анимации ----------
-    def fade_in(self, duration=400):
-        try:
-            self.update()
-            self.deiconify()
-            if os.name != "nt":
-                self.attributes("-alpha", 1.0)
-                return
-            self.attributes("-alpha", 0.0)
-            hwnd = ctypes.windll.user32.GetParent(self.winfo_id())
-            GWL_EXSTYLE = -20
-            WS_EX_LAYERED = 0x00080000
-            style = ctypes.windll.user32.GetWindowLongW(hwnd, GWL_EXSTYLE)
-            ctypes.windll.user32.SetWindowLongW(hwnd, GWL_EXSTYLE, style | WS_EX_LAYERED)
-            steps = 20
-            delay = max(1, duration // steps)
-
-            def step(i=0):
-                if i <= steps:
-                    p = i / steps
-                    alpha = 1 - (1 - p) ** 3
-                    ctypes.windll.user32.SetLayeredWindowAttributes(hwnd, 0, int(alpha * 255), 2)
-                    self.after(delay, lambda: step(i + 1))
-                else:
-                    self.attributes("-alpha", 1.0)
-            step()
-        except Exception:
-            try:
-                self.attributes("-alpha", 1.0)
-                self.deiconify()
-            except Exception:
-                pass
-
     def _pulse_play_button(self):
         if self.is_game_running or self.is_installing:
             return
@@ -454,17 +414,6 @@ class FireLauncher(ctk.CTk):
                                               fg_color="#2c2c2c", button_color=ACCENT,
                                               command=self._on_version_change)
         self.version_menu.pack(side="left")
-        
-        # === ЛОКИРОВКА МЕНЮ ОТ "ТАНЦЕВ" (безопасная версия) ===
-        def unlock_dropdown(event=None):
-            self._dropdown_locked = False
-            
-        # Блокируем, когда мышка заходит на меню (значит, пользователь собирается кликать)
-        self.version_menu.bind("<Enter>", lambda e: setattr(self, "_dropdown_locked", True), add="+")
-        # Разблокируем, когда мышка уходит (чтобы не залипало навсегда)
-        self.version_menu.bind("<Leave>", unlock_dropdown, add="+")
-        # Разблокируем после выбора версии
-        self.version_menu.bind("<<ComboboxSelected>>", unlock_dropdown, add="+")
 
         center_bottom = ctk.CTkFrame(bottom_frame, fg_color="transparent")
         center_bottom.pack(side="left", fill="both", expand=True, padx=10, pady=10)
@@ -765,10 +714,9 @@ class FireLauncher(ctk.CTk):
             
         self.filtered_versions_list = new_list
 
-        if not self._dropdown_locked:
-            self.version_menu.configure(values=self.filtered_versions_list)
-            if hasattr(self, "build_version_menu"):
-                self.build_version_menu.configure(values=self.filtered_versions_list)
+        self.version_menu.configure(values=self.filtered_versions_list)
+        if hasattr(self, "build_version_menu"):
+            self.build_version_menu.configure(values=self.filtered_versions_list)
 
         cur = self.selected_version.get()
         if cur not in self.filtered_versions_list:
@@ -1087,7 +1035,7 @@ class FireLauncher(ctk.CTk):
                 try:
                     facet = f'[["project_type:{content_type}"]]'
                     url = f"{base}/search?query={query}&limit=15&facets={facet}&index=downloads"
-                    r = requests.get(url, headers={"User-Agent": "FireLauncher/2.5.0"}, timeout=15)
+                    r = requests.get(url, headers={"User-Agent": "FireLauncher/2.5.3"}, timeout=15)
                     r.raise_for_status()
                     data = r.json()
                     break
@@ -1140,7 +1088,7 @@ class FireLauncher(ctk.CTk):
     def _load_mod_icon(self, url, card, label):
         def fetch():
             try:
-                r = requests.get(url, timeout=8, headers={"User-Agent": "FireLauncher/2.5.0"})
+                r = requests.get(url, timeout=8, headers={"User-Agent": "FireLauncher/2.5.3"})
                 r.raise_for_status()
                 if len(r.content) > 2 * 1024 * 1024:
                     return
@@ -1175,7 +1123,7 @@ class FireLauncher(ctk.CTk):
                 for base in (MODRINTH_API, MODRINTH_FALLBACK):
                     try:
                         r = requests.get(f"{base}/project/{slug}/version", params=params,
-                                         headers={"User-Agent": "FireLauncher/2.5.0"}, timeout=15)
+                                         headers={"User-Agent": "FireLauncher/2.5.3"}, timeout=15)
                         r.raise_for_status()
                         versions = r.json()
                         break
@@ -1404,7 +1352,7 @@ class FireLauncher(ctk.CTk):
         def fetch():
             try:
                 url = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
-                r = requests.get(url, headers={"User-Agent": "FireLauncher/2.5.0"}, timeout=10)
+                r = requests.get(url, headers={"User-Agent": "FireLauncher/2.5.3"}, timeout=10)
                 if r.status_code == 200:
                     data = r.json()
                     latest = data.get("tag_name", "").replace("v", "")
@@ -1424,6 +1372,10 @@ class FireLauncher(ctk.CTk):
         dlg.configure(fg_color=BG_DARK)
         dlg.transient(self)
         dlg.grab_set()
+        
+        # Защита от закрытия всего лаунчера при закрытии этого окна
+        dlg.protocol("WM_DELETE_WINDOW", dlg.destroy)
+        
         dlg.update_idletasks()
         x = (dlg.winfo_screenwidth() // 2) - 300
         y = (dlg.winfo_screenheight() // 2) - 225
