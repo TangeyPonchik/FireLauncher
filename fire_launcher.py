@@ -182,7 +182,7 @@ class FireLauncher(ctk.CTk):
         super().__init__()
         self.withdraw()
 
-        self.current_version = "2.5.1"
+        self.current_version = "2.5.2"
         self.title(f"FireLauncher v{self.current_version}")
         self.geometry("1150x800")
         self.minsize(1050, 700)
@@ -455,16 +455,15 @@ class FireLauncher(ctk.CTk):
                                               command=self._on_version_change)
         self.version_menu.pack(side="left")
         
-        # === ЛОКИРОВКА МЕНЮ ОТ "ТАНЦЕВ" ===
-        def lock_dropdown(event=None):
-            self._dropdown_locked = True
-            
+        # === ЛОКИРОВКА МЕНЮ ОТ "ТАНЦЕВ" (безопасная версия) ===
         def unlock_dropdown(event=None):
             self._dropdown_locked = False
             
-        self.version_menu._canvas.bind("<Button-1>", lock_dropdown, add="+")
-        self.version_menu._button_canvas.bind("<Button-1>", lock_dropdown, add="+")
-        self.version_menu.bind("<Unmap>", unlock_dropdown, add="+")
+        # Блокируем, когда мышка заходит на меню (значит, пользователь собирается кликать)
+        self.version_menu.bind("<Enter>", lambda e: setattr(self, "_dropdown_locked", True), add="+")
+        # Разблокируем, когда мышка уходит (чтобы не залипало навсегда)
+        self.version_menu.bind("<Leave>", unlock_dropdown, add="+")
+        # Разблокируем после выбора версии
         self.version_menu.bind("<<ComboboxSelected>>", unlock_dropdown, add="+")
 
         center_bottom = ctk.CTkFrame(bottom_frame, fg_color="transparent")
