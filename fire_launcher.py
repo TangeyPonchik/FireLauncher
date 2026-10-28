@@ -1,5 +1,5 @@
 # fire_launcher.py
-# FireLauncher v2.5.3 (STABLE) — фикс танцев, крашей и анимаций
+# FireLauncher v2.5.4 (FULL RELEASE) — стабильный релиз с плавным прогресс-баром
 import customtkinter as ctk
 import threading
 import os
@@ -58,10 +58,21 @@ MODRINTH_FALLBACK = "https://api.modrinth.com/v2"
 GITHUB_REPO = "TangeyPonchik/FireLauncher"
 
 LAUNCHER_CHANGELOG = """
-🔥 FireLauncher v2.5.3 (STABLE)
-- Убрана анимация появления (вызывала краши и "танцы").
-- Пофикшены вылеты при загрузке списка версий.
+🔥 FireLauncher v2.5.4 (FULL RELEASE)
+
+Что нового (включая пре-релизы v2.5.0 - v2.5.3):
+- Добавлены Инстансы: можно создавать отдельные папки под каждую сборку.
+- Безопасность: токен Ely.by теперь шифруется через Windows DPAPI.
+- Улучшен поиск модов: добавлен Fallback на официальный API Modrinth.
+- Проверка ZIP-сигнатуры .jar перед сохранением (защита от битых файлов).
+- Защита от zip-slip при импорте модпаков (безопасная распаковка).
+- Умная починка: перекачивает битые файлы без удаления всей папки версии.
+- Статистика: таймер игры больше не учитывает время дважды.
+- Исправлены "танцующие" выпадающие списки версий.
+- Убрана анимация появления окна (вызывала краши и вылеты).
 - Окно обновлений больше не крашит лаунчер при закрытии.
+- НОВОЕ: Полностью переписан прогресс-бар. Теперь он плавно ползёт 
+  при скачивании и проверке файлов, а не стоит на месте.
 """
 
 # ---------- Токен: DPAPI / fallback ----------
@@ -153,7 +164,7 @@ def looks_like_jar(path: str) -> bool:
 def download_file(url: str, dest: str, timeout: int = 30, expected_sha512: str = None):
     h = hashlib.sha512() if expected_sha512 else None
     r = requests.get(url, stream=True, timeout=timeout,
-                     headers={"User-Agent": "FireLauncher/2.5.3"})
+                     headers={"User-Agent": "FireLauncher/2.5.4"})
     r.raise_for_status()
     total = 0
     with open(dest, "wb") as f:
@@ -176,7 +187,7 @@ class FireLauncher(ctk.CTk):
     def __init__(self):
         super().__init__()
         
-        self.current_version = "2.5.3"
+        self.current_version = "2.5.4"
         self.title(f"FireLauncher v{self.current_version}")
         self.geometry("1150x800")
         self.minsize(1050, 700)
@@ -201,6 +212,7 @@ class FireLauncher(ctk.CTk):
         self.total_play_time = 0.0
 
         self._progress_target = 0.0
+        self._progress_animating = False
         self._pulse_step = 0
 
         self.show_releases_var = ctk.BooleanVar(value=True)
@@ -225,7 +237,6 @@ class FireLauncher(ctk.CTk):
         self._load_instances()
         self._load_config()
         
-        # Запускаем загрузку версий с задержкой, чтобы окно сначала отрисовалось
         self.after(100, lambda: threading.Thread(target=self._load_versions, daemon=True).start())
 
         self.after(1000, self._pulse_play_button)
@@ -325,8 +336,9 @@ class FireLauncher(ctk.CTk):
                 self.after(16, self._animate_progress)
             else:
                 self.progress_bar.set(target)
+                self._progress_animating = False
         except Exception:
-            pass
+            self._progress_animating = False
 
     # ---------- UI: sidebar ----------
     def _build_sidebar(self):
@@ -1035,7 +1047,7 @@ class FireLauncher(ctk.CTk):
                 try:
                     facet = f'[["project_type:{content_type}"]]'
                     url = f"{base}/search?query={query}&limit=15&facets={facet}&index=downloads"
-                    r = requests.get(url, headers={"User-Agent": "FireLauncher/2.5.3"}, timeout=15)
+                    r = requests.get(url, headers={"User-Agent": "FireLauncher/2.5.4"}, timeout=15)
                     r.raise_for_status()
                     data = r.json()
                     break
@@ -1088,7 +1100,7 @@ class FireLauncher(ctk.CTk):
     def _load_mod_icon(self, url, card, label):
         def fetch():
             try:
-                r = requests.get(url, timeout=8, headers={"User-Agent": "FireLauncher/2.5.3"})
+                r = requests.get(url, timeout=8, headers={"User-Agent": "FireLauncher/2.5.4"})
                 r.raise_for_status()
                 if len(r.content) > 2 * 1024 * 1024:
                     return
@@ -1123,7 +1135,7 @@ class FireLauncher(ctk.CTk):
                 for base in (MODRINTH_API, MODRINTH_FALLBACK):
                     try:
                         r = requests.get(f"{base}/project/{slug}/version", params=params,
-                                         headers={"User-Agent": "FireLauncher/2.5.3"}, timeout=15)
+                                         headers={"User-Agent": "FireLauncher/2.5.4"}, timeout=15)
                         r.raise_for_status()
                         versions = r.json()
                         break
@@ -1213,13 +1225,6 @@ class FireLauncher(ctk.CTk):
         threading.Thread(target=work, daemon=True).start()
 
     # ---------- Запуск игры ----------
-    def _update_progress(self, current, total=None):
-        if total and total > 0:
-            self._progress_target = current / total
-            if not getattr(self, "_progress_animating", False):
-                self._progress_animating = True
-                self._animate_progress()
-
     def _run_game_logic(self):
         try:
             ver = self.version_dict.get(self.selected_version.get(), "")
@@ -1230,16 +1235,39 @@ class FireLauncher(ctk.CTk):
             self.after(0, lambda: self.progress_bar.pack(anchor="center"))
             self.after(0, lambda: self.play_btn.configure(text="Установка...", state="disabled"))
             self.is_installing = True
+            self._progress_target = 0.0
+            self.progress_bar.set(0)
+
+            # Счётчик для плавного прогресса
+            self._files_downloaded = 0
+            self._approx_total_files = 80 
 
             def safe_status(t):
                 self.after(0, lambda: self.progress_label.configure(text=t))
+                
+                # Считаем прогресс по строкам проверки и скачивания
+                if t.startswith("Checking ") or t.startswith("Download ") or t.startswith("Extracting ") or t.startswith("Verifying "):
+                    self._files_downloaded += 1
+                    new_val = min(0.95, self._files_downloaded / self._approx_total_files)
+                    
+                    # Если прогресс вырос, запускаем плавную анимацию
+                    if new_val > self._progress_target:
+                        self._progress_target = new_val
+                        if not getattr(self, "_progress_animating", False):
+                            self._progress_animating = True
+                            self.after(0, self._animate_progress)
 
             callback = {
                 "setStatus": safe_status,
-                "setProgress": self._update_progress,
+                "setProgress": lambda c, t=None: None,  # Игнорируем родной прогресс
                 "setMax": lambda m: None,
             }
+            
             minecraft_launcher_lib.install.install_minecraft_version(ver, self.minecraft_dir, callback=callback)
+
+            # Установка завершена, добиваем до 100%
+            self._progress_target = 1.0
+            self.after(0, lambda: self.progress_bar.set(1.0))
 
             jvm_args = [f"-Xmx{self.ram_value.get()}G", "-Xms2G"]
             extra = self.jvm_args_entry.get().strip() if hasattr(self, "jvm_args_entry") else ""
@@ -1303,6 +1331,7 @@ class FireLauncher(ctk.CTk):
             self.is_installing = False
             self._pulse_play_button()
         finally:
+            self.is_installing = False
             self.after(0, lambda: self.progress_bar.pack_forget())
             self.after(0, lambda: self.progress_label.pack_forget())
 
@@ -1352,7 +1381,7 @@ class FireLauncher(ctk.CTk):
         def fetch():
             try:
                 url = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
-                r = requests.get(url, headers={"User-Agent": "FireLauncher/2.5.3"}, timeout=10)
+                r = requests.get(url, headers={"User-Agent": "FireLauncher/2.5.4"}, timeout=10)
                 if r.status_code == 200:
                     data = r.json()
                     latest = data.get("tag_name", "").replace("v", "")
@@ -1373,7 +1402,6 @@ class FireLauncher(ctk.CTk):
         dlg.transient(self)
         dlg.grab_set()
         
-        # Защита от закрытия всего лаунчера при закрытии этого окна
         dlg.protocol("WM_DELETE_WINDOW", dlg.destroy)
         
         dlg.update_idletasks()
